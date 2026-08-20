@@ -1,8 +1,11 @@
 name: Deploy to GitHub Pages
 
+# Only `main` is allowed to deploy to the `github-pages` environment, so the
+# publish path runs from main. gh-pages-deploy still builds on push, which
+# catches a broken build before it reaches main.
 on:
   push:
-    branches: [gh-pages-deploy]
+    branches: [main, gh-pages-deploy]
   workflow_dispatch:
 
 # Least privilege: read the repo, publish a Pages artifact, and prove identity
@@ -44,8 +47,11 @@ jobs:
         with:
           path: dist
 
+  # Skipped on gh-pages-deploy: the environment rejects non-main branches, which
+  # would otherwise show the run as failed even though the build passed.
   deploy:
     needs: build
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
