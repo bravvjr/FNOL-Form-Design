@@ -1,0 +1,61 @@
+name: Deploy to GitHub Pages
+
+# Only `main` is allowed to deploy to the `github-pages` environment, so the
+# publish path runs from main. gh-pages-deploy still builds on push, which
+# catches a broken build before it reaches main.
+on:
+  push:
+    branches: [main, gh-pages-deploy]
+  workflow_dispatch:
+
+# Least privilege: read the repo, publish a Pages artifact, and prove identity
+# to the deploy step. No write access to repository contents.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a newer deploy supersede an in-flight one, but never cancel a run that is
+# already publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # package-lock.json is the lockfile that matches package.json.
+      # pnpm-lock.yaml in this repo is stale - do not build from it.
+      - run: npm ci
+
+      # Project Pages serve from /<repo>/, so the bundle needs a matching base.
+      # vite.config.ts already derives `base`, so pass it on the CLI rather than
+      # editing the Figma-managed config.
+      - run: npx vite build --base=/${{ github.event.repository.name }}/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  # Skipped on gh-pages-deploy: the environment rejects non-main branches, which
+  # would otherwise show the run as failed even though the build passed.
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
