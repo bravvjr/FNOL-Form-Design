@@ -1,0 +1,761 @@
+{
+  "schemaVersion": "fnol.vehicle-lookup/v3",
+  "generatedAt": "2026-08-20",
+  "source": {
+    "engine": "postgres",
+    "database": "web_dev",
+    "server": "db:5432",
+    "primaryTable": "draftquote",
+    "jsonColumn": "insurance_data",
+    "join": {
+      "table": "user",
+      "on": "draftquote.draft_quote_user_id = user.id",
+      "type": "inner"
+    },
+    "note": "Hardcoded snapshot of live rows. Swap `records` for GET /api/vehicles/search?q= returning the same shape and nothing else changes.",
+    "namingNote": "Live objects are `draftquote` and `insurance_data` (the spec wrote draftqoute / insuarance_data)."
+  },
+  "normalization": {
+    "note": "The raw jsonb carries several keys for the same fact, written by different intake paths. Each record stores one canonical camelCase key per fact; aliases collapse in the order listed and the duplicates are dropped, so no value repeats anywhere in a record.",
+    "collapsedAliases": {
+      "vehicle.registrationNumber": [
+        "registration_number",
+        "registration",
+        "reg_no"
+      ],
+      "vehicle.yearOfManufacture": [
+        "year_of_manufacture",
+        "year"
+      ],
+      "vehicle.engineCc": [
+        "cc",
+        "engine_capacity"
+      ],
+      "vehicle.engineNumber": [
+        "engine_number",
+        "engine_no"
+      ],
+      "vehicle.chassisNumber": [
+        "chassis_number",
+        "chassis_no",
+        "chassis"
+      ],
+      "vehicle.seatingCapacity": [
+        "seating_capacity",
+        "number_of_passengers",
+        "licensed_to_carry"
+      ],
+      "vehicle.sumInsured": [
+        "sum_insured",
+        "value"
+      ],
+      "client.idNumber": [
+        "id_number"
+      ]
+    },
+    "droppedFromRawJson": {
+      "vehicle": [
+        "vehicle_usage"
+      ],
+      "client": [
+        "type",
+        "kra_pin",
+        "pin",
+        "date_of_birth",
+        "city",
+        "address",
+        "postal_address",
+        "huduma_number",
+        "saz_assist_activation_number"
+      ],
+      "reason": "Not consumed by the FNOL form. Re-add to the SELECT if a downstream step needs them."
+    },
+    "emptyKeysOmitted": true
+  },
+  "shapes": {
+    "record": {
+      "quoteRef": {
+        "type": "string",
+        "dbPath": "draftquote.draft_quote_ref"
+      },
+      "sourceOrigin": {
+        "type": "string",
+        "enum": [
+          "on-portal",
+          "off-portal"
+        ],
+        "derivation": "off-portal when insurance_data ? 'renewal' (row seeded from an uploaded renewal-notice batch - see renewal_notices.source_file_name / upload_batch_id); otherwise on-portal.",
+        "note": "Derived, not stored: draftquote has no channel column."
+      }
+    },
+    "vehicle": {
+      "path": "draftquote.insurance_data.vehicle",
+      "keys": {
+        "registrationNumber": {
+          "type": "string",
+          "formLabel": "Registration Number"
+        },
+        "make": {
+          "type": "string",
+          "formLabel": "Make"
+        },
+        "model": {
+          "type": "string",
+          "formLabel": "Model"
+        },
+        "yearOfManufacture": {
+          "type": "number",
+          "formLabel": "Year of Manufacture"
+        },
+        "bodyType": {
+          "type": "string",
+          "note": "either a Premia code ('001', '004') or a label ('STATION WAGON')"
+        },
+        "motorClass": {
+          "type": "string",
+          "enumSeen": [
+            "private",
+            "commercial"
+          ]
+        },
+        "vehicleClass": {
+          "type": "string"
+        },
+        "engineCc": {
+          "type": "string"
+        },
+        "engineNumber": {
+          "type": "string"
+        },
+        "chassisNumber": {
+          "type": "string"
+        },
+        "seatingCapacity": {
+          "type": "string"
+        },
+        "tonnage": {
+          "type": "string"
+        },
+        "sumInsured": {
+          "type": "number",
+          "currency": "KES"
+        }
+      }
+    },
+    "client": {
+      "path": "draftquote.insurance_data.client",
+      "keys": {
+        "name": {
+          "type": "string",
+          "dbPath": "client.name",
+          "formLabel": "Insured Name"
+        },
+        "idNumber": {
+          "type": "string",
+          "dbPath": "client.id_number",
+          "formLabel": "ID Number"
+        },
+        "gender": {
+          "type": "string",
+          "dbPath": "client.gender"
+        },
+        "email": {
+          "type": "string",
+          "dbPath": "client.email"
+        },
+        "phone": {
+          "type": "string",
+          "dbPath": "client.phone"
+        }
+      }
+    },
+    "intermediary": {
+      "path": "user (via draftquote.draft_quote_user_id)",
+      "keys": {
+        "name": {
+          "type": "string",
+          "dbPath": "user.name",
+          "formLabel": "Intermediary Name"
+        },
+        "code": {
+          "type": "string",
+          "dbPath": "user.cust_code",
+          "formLabel": "Intermediary Code"
+        },
+        "email": {
+          "type": "string",
+          "dbPath": "user.email"
+        },
+        "phone": {
+          "type": "string",
+          "dbPath": "user.phone"
+        }
+      }
+    }
+  },
+  "fieldMap": {
+    "registrationNumber": {
+      "formLabel": "Registration Number",
+      "from": "record.vehicle.registrationNumber",
+      "role": "searchKey",
+      "editable": true
+    },
+    "make": {
+      "formLabel": "Make",
+      "from": "record.vehicle.make",
+      "role": "autofill",
+      "editable": false
+    },
+    "model": {
+      "formLabel": "Model",
+      "from": "record.vehicle.model",
+      "role": "autofill",
+      "editable": false
+    },
+    "yearOfManufacture": {
+      "formLabel": "Year of Manufacture",
+      "from": "record.vehicle.yearOfManufacture",
+      "role": "autofill",
+      "editable": false
+    },
+    "intermediaryName": {
+      "formLabel": "Intermediary Name",
+      "from": "record.intermediary.name",
+      "role": "autofill",
+      "editable": false
+    },
+    "intermediaryCode": {
+      "formLabel": "Intermediary Code",
+      "from": "record.intermediary.code",
+      "role": "autofill",
+      "editable": false
+    },
+    "insuredName": {
+      "formLabel": "Insured Name",
+      "from": "record.client.name",
+      "role": "autofill",
+      "editable": false
+    },
+    "insuredIdNumber": {
+      "formLabel": "ID Number",
+      "from": "record.client.idNumber",
+      "role": "autofill",
+      "editable": false
+    },
+    "intermediaryPhone": {
+      "formLabel": "Phone",
+      "from": "record.intermediary.phone",
+      "role": "autofill",
+      "editable": false
+    },
+    "intermediaryEmail": {
+      "formLabel": "Email",
+      "from": "record.intermediary.email",
+      "role": "autofill",
+      "editable": false
+    }
+  },
+  "autosuggest": {
+    "field": "registrationNumber",
+    "placeholder": "Start typing a registration number, e.g. KDQ089K",
+    "helperText": "Type at least 1 character to search existing vehicles",
+    "emptyText": "No vehicle found for that registration",
+    "minChars": 1,
+    "maxSuggestions": 12,
+    "debounceMs": 150,
+    "matchMode": "contains",
+    "caseSensitive": false,
+    "normalize": {
+      "uppercase": true,
+      "stripSpaces": true,
+      "stripHyphens": true
+    },
+    "searchFields": [
+      "vehicle.registrationNumber",
+      "vehicle.make",
+      "vehicle.model",
+      "client.name"
+    ],
+    "suggestionTemplate": {
+      "primary": "{vehicle.registrationNumber}",
+      "secondary": "{vehicle.make} {vehicle.model}",
+      "tertiary": "{client.name} · {intermediary.name}",
+      "trailing": "{vehicle.yearOfManufacture}"
+    },
+    "keyboard": {
+      "ArrowDown": "next",
+      "ArrowUp": "previous",
+      "Enter": "select",
+      "Escape": "close"
+    }
+  },
+  "onSelect": {
+    "action": "autofill",
+    "fills": [
+      {
+        "target": "make",
+        "from": "record.vehicle.make"
+      },
+      {
+        "target": "model",
+        "from": "record.vehicle.model"
+      },
+      {
+        "target": "yearOfManufacture",
+        "from": "record.vehicle.yearOfManufacture"
+      },
+      {
+        "target": "intermediaryName",
+        "from": "record.intermediary.name"
+      },
+      {
+        "target": "intermediaryCode",
+        "from": "record.intermediary.code"
+      },
+      {
+        "target": "insuredName",
+        "from": "record.client.name"
+      },
+      {
+        "target": "insuredIdNumber",
+        "from": "record.client.idNumber"
+      },
+      {
+        "target": "intermediaryPhone",
+        "from": "record.intermediary.phone"
+      },
+      {
+        "target": "intermediaryEmail",
+        "from": "record.intermediary.email"
+      }
+    ],
+    "lockFilledFields": true,
+    "lockedFieldStyle": {
+      "readOnly": true,
+      "tabIndex": -1,
+      "background": "#f1f5f9",
+      "borderColor": "#e2e8f0",
+      "textColor": "#64748b",
+      "cursor": "not-allowed",
+      "badge": null,
+      "badgeNote": "No badge or lock glyph - the grey treatment alone signals the locked state."
+    },
+    "detailPanel": {
+      "title": "Policy record",
+      "subtitle": "{quoteRef}",
+      "badge": "{sourceOrigin}",
+      "rows": [
+        {
+          "label": "Engine CC",
+          "from": "record.vehicle.engineCc"
+        },
+        {
+          "label": "Engine No.",
+          "from": "record.vehicle.engineNumber"
+        },
+        {
+          "label": "Chassis No.",
+          "from": "record.vehicle.chassisNumber"
+        },
+        {
+          "label": "Class",
+          "from": "record.vehicle.motorClass"
+        },
+        {
+          "label": "Sum Insured",
+          "from": "record.vehicle.sumInsured",
+          "format": "KES #,##0"
+        },
+        {
+          "label": "Insured Phone",
+          "from": "record.client.phone"
+        },
+        {
+          "label": "Insured Email",
+          "from": "record.client.email"
+        }
+      ]
+    },
+    "unlock": {
+      "trigger": "clearRegistration",
+      "label": "Clear",
+      "behavior": "clears every auto-filled field and returns them to editable"
+    },
+    "sideEffects": [
+      {
+        "target": "partyType",
+        "value": "intermediary",
+        "reason": "Defaults the party panel to Intermediary; the toggle stays enabled so the user can view the locked insured details, which come from insurance_data.client on the same draft quote."
+      }
+    ]
+  },
+  "records": [
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0134",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KAN512J",
+        "make": "MITSUBISHI",
+        "model": "L 200",
+        "yearOfManufacture": 2019,
+        "bodyType": "004",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "1400",
+        "engineNumber": "MA3EYD32S0070",
+        "chassisNumber": "7004AN",
+        "seatingCapacity": "5",
+        "tonnage": "1",
+        "sumInsured": 2600000
+      },
+      "client": {
+        "name": "ANDREW KARANJA WAMBUI",
+        "idNumber": "36505083",
+        "gender": "Male",
+        "email": "noreply.ticketingapp@gmail.com",
+        "phone": "+254732254497"
+      },
+      "intermediary": {
+        "name": "Eren Yeager",
+        "code": "K22000468",
+        "email": "eren.yeager@8878938.xyz",
+        "phone": "0796927065"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0038",
+      "sourceOrigin": "off-portal",
+      "vehicle": {
+        "registrationNumber": "KBX 100B",
+        "make": "B.M.W.",
+        "model": "BMW",
+        "yearOfManufacture": 2006,
+        "bodyType": "STATION WAGON",
+        "engineCc": "2993",
+        "engineNumber": "24846279",
+        "chassisNumber": "WBAFB72070LY97176",
+        "sumInsured": 1450000.0
+      },
+      "client": {
+        "name": "MAUREEN ANDURO OMWANDA",
+        "idNumber": "22453468",
+        "email": "brian@goldenglobeinsure.com",
+        "phone": "735856798"
+      },
+      "intermediary": {
+        "name": "EQUITY BANK",
+        "code": "K21006514",
+        "email": "bravvjr@gmail.com",
+        "phone": "732254497"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0092",
+      "sourceOrigin": "off-portal",
+      "vehicle": {
+        "registrationNumber": "KCE-907",
+        "make": "NISSAN",
+        "model": "NOTE",
+        "yearOfManufacture": 2008,
+        "bodyType": "STATION WAGON",
+        "engineCc": "1490",
+        "engineNumber": "HR15-368056A",
+        "chassisNumber": "E11-324663",
+        "sumInsured": 500000.0
+      },
+      "client": {
+        "name": "Mrs.MBOCHI REGINA WAMBUI",
+        "idNumber": "5325195",
+        "email": "bravvjr@gmail.com",
+        "phone": "710340747"
+      },
+      "intermediary": {
+        "name": "EQUITY WESTLANDS",
+        "code": "23232323",
+        "email": "oragengamer@gmail.com",
+        "phone": "737662883"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1001/2026/01059/0003",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KDE-123K",
+        "make": "CHEVROLET",
+        "model": "TRAILBLAZER",
+        "yearOfManufacture": 2015,
+        "bodyType": "001",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "2000",
+        "engineNumber": "4626263",
+        "chassisNumber": "462752753",
+        "seatingCapacity": "5",
+        "tonnage": "3",
+        "sumInsured": 2000000
+      },
+      "client": {
+        "name": "STD AUTO",
+        "idNumber": "214326457",
+        "gender": "Male",
+        "email": "iamoragen@gmail.com",
+        "phone": "+254123456789"
+      },
+      "intermediary": {
+        "name": "EQUITY BANK",
+        "code": "K21006514",
+        "email": "bravvjr@gmail.com",
+        "phone": "732254497"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0044",
+      "sourceOrigin": "off-portal",
+      "vehicle": {
+        "registrationNumber": "KDL549S",
+        "make": "NISSAN",
+        "model": "X-TRAIL",
+        "yearOfManufacture": 2016,
+        "bodyType": "STATION WAGON",
+        "motorClass": "Motor Private",
+        "engineCc": "1990",
+        "engineNumber": "MR20-857418B",
+        "chassisNumber": "NT32-044062",
+        "sumInsured": 2450000
+      },
+      "client": {
+        "name": "LAVENDA ALWAKA ONDERE",
+        "idNumber": "25169634",
+        "email": "ngure.gloria@gmail.com",
+        "phone": "723000061"
+      },
+      "intermediary": {
+        "name": "EQUITY BANK",
+        "code": "K21006514",
+        "email": "bravvjr@gmail.com",
+        "phone": "732254497"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0039",
+      "sourceOrigin": "off-portal",
+      "vehicle": {
+        "registrationNumber": "KDP022L",
+        "make": "MAZDA",
+        "model": "CX-5",
+        "yearOfManufacture": 2017,
+        "bodyType": "005",
+        "motorClass": "Motor Private",
+        "vehicleClass": "C",
+        "engineCc": "2180",
+        "engineNumber": "SH-30760097",
+        "chassisNumber": "KF2P-113882",
+        "sumInsured": 2950000
+      },
+      "client": {
+        "name": "GEORGE NGURE CHIRA",
+        "idNumber": "898093",
+        "email": "ngure.gloria@gmail.com",
+        "phone": "+254722512865"
+      },
+      "intermediary": {
+        "name": "EQUITY BANK",
+        "code": "K21006514",
+        "email": "bravvjr@gmail.com",
+        "phone": "732254497"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0137",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KDQ-008",
+        "make": "MERCEDES",
+        "model": "C200",
+        "yearOfManufacture": 2021,
+        "bodyType": "001",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "2000",
+        "engineNumber": "1122334455",
+        "chassisNumber": "445566",
+        "seatingCapacity": "5",
+        "tonnage": "1",
+        "sumInsured": 5300000
+      },
+      "client": {
+        "name": "JOSEPH OWINO MUYA",
+        "idNumber": "80805214",
+        "gender": "Male",
+        "email": "baha.karaja@gmail.com",
+        "phone": "+254732254497"
+      },
+      "intermediary": {
+        "name": "Andy Bahati",
+        "code": "K21005325",
+        "email": "andruu.karanja@gmail.com",
+        "phone": "796927065"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0135",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KDQ089K",
+        "make": "AUDI",
+        "model": "A3",
+        "yearOfManufacture": 2019,
+        "bodyType": "001",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "1400",
+        "engineNumber": "Z0555022M",
+        "chassisNumber": "2145022M",
+        "seatingCapacity": "5",
+        "tonnage": "2",
+        "sumInsured": 2100000
+      },
+      "client": {
+        "name": "ANDREW KARANJA WAMBUI",
+        "idNumber": "28505269",
+        "gender": "Male",
+        "email": "noreply.ticketingapp@gmail.com",
+        "phone": "+254702853511"
+      },
+      "intermediary": {
+        "name": "Andy Bahati",
+        "code": "K21005325",
+        "email": "andruu.karanja@gmail.com",
+        "phone": "796927065"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0136",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KFC003L",
+        "make": "AUDI",
+        "model": "A7",
+        "yearOfManufacture": 2021,
+        "bodyType": "001",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "2000",
+        "engineNumber": "014536J",
+        "chassisNumber": "536LMJ",
+        "seatingCapacity": "5",
+        "tonnage": "1",
+        "sumInsured": 2300000
+      },
+      "client": {
+        "name": "FRANCIS NJENGA NJERI",
+        "idNumber": "36909012",
+        "gender": "Male",
+        "email": "baha.karanja@gmail.com",
+        "phone": "+254770705461"
+      },
+      "intermediary": {
+        "name": "Andy Bahati",
+        "code": "K21005325",
+        "email": "andruu.karanja@gmail.com",
+        "phone": "796927065"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0022",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KHG-986",
+        "make": "B.M.W.",
+        "model": "3 SERIES",
+        "yearOfManufacture": 2023,
+        "bodyType": "001",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "2000",
+        "engineNumber": "765HDHGD",
+        "chassisNumber": "687486GJ",
+        "seatingCapacity": "5",
+        "tonnage": "2",
+        "sumInsured": 4000000
+      },
+      "client": {
+        "name": "BRAVIN MURAMBI",
+        "idNumber": "12342134",
+        "gender": "Male",
+        "email": "iamoragen@gmail.com",
+        "phone": "+254123423423"
+      },
+      "intermediary": {
+        "name": "EQUITY BANK",
+        "code": "K21006514",
+        "email": "bravvjr@gmail.com",
+        "phone": "732254497"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0029",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KJG-674",
+        "make": "B.M.W.",
+        "model": "3 SERIES",
+        "yearOfManufacture": 2023,
+        "bodyType": "001",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "5",
+        "engineNumber": "YR7865",
+        "chassisNumber": "86JHF",
+        "seatingCapacity": "5",
+        "tonnage": "3",
+        "sumInsured": 4000000
+      },
+      "client": {
+        "name": "DFG REG",
+        "idNumber": "325423412",
+        "gender": "Male",
+        "email": "iamoragen@gmail.com",
+        "phone": "+254123423454"
+      },
+      "intermediary": {
+        "name": "EQUITY BANK",
+        "code": "K21006514",
+        "email": "bravvjr@gmail.com",
+        "phone": "732254497"
+      }
+    },
+    {
+      "quoteRef": "P/101/S1002/2026/01059/0094",
+      "sourceOrigin": "on-portal",
+      "vehicle": {
+        "registrationNumber": "KNH333B",
+        "make": "TOYOTA",
+        "model": "HARRIER",
+        "yearOfManufacture": 2023,
+        "bodyType": "019",
+        "motorClass": "private",
+        "vehicleClass": "C",
+        "engineCc": "2500",
+        "engineNumber": "E-7896",
+        "chassisNumber": "CHASIS-01",
+        "seatingCapacity": "5",
+        "tonnage": "2",
+        "sumInsured": 2000000
+      },
+      "client": {
+        "name": "NANATSU NO TAIZAI",
+        "idNumber": "657893456",
+        "gender": "Male",
+        "email": "paulowayo@gmail.com",
+        "phone": "+254717702346"
+      },
+      "intermediary": {
+        "name": "Eren Yeager",
+        "code": "K22000468",
+        "email": "eren.yeager@8878938.xyz",
+        "phone": "0796927065"
+      }
+    }
+  ]
+}

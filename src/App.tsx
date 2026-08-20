@@ -1,5 +1,104 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import ClaimTracking from "./ClaimTracking";
+import vehicleLookup from "./vehicleLookup.json";
+
+/**
+ * `insurance_data.vehicle`, normalised at build time: the raw jsonb carries
+ * several aliases per fact (registration/reg_no, cc/engine_capacity, ...), so
+ * vehicleLookup.json collapses each set to one canonical key. Keys stay optional
+ * because the raw blob is schema-less and empty values are omitted.
+ */
+type Vehicle = {
+  registrationNumber: string;
+  make: string;
+  model: string;
+  yearOfManufacture: number;
+  bodyType?: string;
+  motorClass?: string;
+  vehicleClass?: string;
+  engineCc?: string;
+  engineNumber?: string;
+  chassisNumber?: string;
+  seatingCapacity?: string;
+  tonnage?: string;
+  sumInsured?: number;
+};
+
+/** `insurance_data.client`, trimmed to what the FNOL form consumes. */
+type Client = {
+  name?: string;
+  idNumber?: string;
+  gender?: string;
+  email?: string;
+  phone?: string;
+};
+
+/** Resolved from `user` via `draftquote.draft_quote_user_id`. */
+type Intermediary = {
+  name: string;
+  code?: string;
+  email?: string;
+  phone?: string;
+};
+
+type VehicleRecord = {
+  quoteRef: string;
+  sourceOrigin: "on-portal" | "off-portal";
+  vehicle: Vehicle;
+  client: Client;
+  intermediary: Intermediary;
+};
+
+const LOOKUP = vehicleLookup as unknown as {
+  autosuggest: {
+    placeholder: string;
+    helperText: string;
+    emptyText: string;
+    minChars: number;
+    maxSuggestions: number;
+  };
+  records: VehicleRecord[];
+};
+
+/** Normalise for matching: "kdq 089-k" and "KDQ089K" are the same plate. */
+const normPlate = (v: string | undefined) => (v ?? "").toUpperCase().replace(/[\s-]/g, "");
+
+function searchVehicles(query: string): VehicleRecord[] {
+  const needle = normPlate(query);
+  if (needle.length < LOOKUP.autosuggest.minChars) return [];
+  return LOOKUP.records
+    .filter(
+      (r) =>
+        normPlate(r.vehicle.registrationNumber).includes(needle) ||
+        normPlate(r.vehicle.make).includes(needle) ||
+        normPlate(r.vehicle.model).includes(needle) ||
+        normPlate(r.client.name ?? "").includes(needle),
+    )
+    .slice(0, LOOKUP.autosuggest.maxSuggestions);
+}
+
+const EMPTY_VEHICLE = { registrationNumber: "", make: "", model: "", yearOfManufacture: "" };
+const EMPTY_INTERMEDIARY = { name: "", code: "", phone: "", email: "" };
+const EMPTY_INSURED = { name: "", idNumber: "" };
+
+const KES = new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 });
+const titleCase = (v: string) => v.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+
+function recordDetailRows(r: VehicleRecord): { label: string; value: string }[] {
+  const { vehicle: v, client: c } = r;
+  const pairs: [string, string | number | undefined][] = [
+    ["Engine CC", v.engineCc],
+    ["Engine No.", v.engineNumber],
+    ["Chassis No.", v.chassisNumber],
+    ["Class", v.motorClass && titleCase(v.motorClass)],
+    ["Sum Insured", v.sumInsured != null ? KES.format(v.sumInsured) : undefined],
+    ["Insured Phone", c.phone],
+    ["Insured Email", c.email],
+  ];
+  return pairs
+    .filter(([, value]) => value != null && String(value).trim() !== "")
+    .map(([label, value]) => ({ label, value: String(value) }));
+}
 
 type ClaimType = "Normal" | "Partial Theft" | "Total Loss" | "Windscreen" | "";
 type DeliveryMode = "Garage Collection" | "Home Delivery" | "Courier" | "";
@@ -104,19 +203,139 @@ function SectionCard({ title, subtitle, children }: { title: string; subtitle: s
   );
 }
 
-function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
+function Label({ children, required, locked }: { children: React.ReactNode; required?: boolean; locked?: boolean }) {
   return (
-    <label className="block text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1.5">
-      {children}{required && <span className="text-blue-400 ml-0.5">*</span>}
+    <label className={`block text-xs font-semibold uppercase tracking-wide mb-1.5 ${locked ? "text-slate-400" : "text-blue-700"}`}>
+      {children}{required && <span className={locked ? "text-slate-300 ml-0.5" : "text-blue-400 ml-0.5"}>*</span>}
     </label>
   );
 }
 
-function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
+function Input({ locked, className, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { locked?: boolean }) {
   return (
     <input {...props}
-      className={`w-full bg-white border border-blue-200 rounded-lg px-3 py-2.5 text-sm text-blue-900 placeholder-blue-300
-        focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-150 ${props.className ?? ""}`} />
+      readOnly={locked || props.readOnly}
+      aria-readonly={locked || undefined}
+      tabIndex={locked ? -1 : props.tabIndex}
+      className={`w-full border rounded-lg px-3 py-2.5 text-sm transition-all duration-150
+        ${locked
+          ? "bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed select-none"
+          : "bg-white border-blue-200 text-blue-900 placeholder-blue-300 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"}
+        ${className ?? ""}`} />
+  );
+}
+
+function RegistrationAutosuggest({ value, locked, onChange, onSelect, onClear }: {
+  value: string;
+  locked: boolean;
+  onChange: (v: string) => void;
+  onSelect: (record: VehicleRecord) => void;
+  onClear: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const results = locked ? [] : searchVehicles(value);
+  const showList = open && !locked && value.trim().length >= LOOKUP.autosuggest.minChars;
+
+  useEffect(() => setHighlight(0), [value]);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const choose = (record: VehicleRecord) => { onSelect(record); setOpen(false); };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!showList || results.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => (h + 1) % results.length); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => (h - 1 + results.length) % results.length); }
+    else if (e.key === "Enter") { e.preventDefault(); choose(results[highlight]); }
+    else if (e.key === "Escape") { setOpen(false); }
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="relative">
+        <Input
+          value={value}
+          locked={locked}
+          placeholder={LOOKUP.autosuggest.placeholder}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={showList}
+          aria-autocomplete="list"
+          aria-controls="reg-listbox"
+          aria-activedescendant={showList && results.length > 0 ? `reg-option-${highlight}` : undefined}
+          className={locked ? "pr-9" : "pl-9 pr-3"}
+          onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          required
+        />
+        {!locked && (
+          <svg className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300"
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.85-5.4a7.25 7.25 0 11-14.5 0 7.25 7.25 0 0114.5 0z" />
+          </svg>
+        )}
+        {locked && (
+          <button type="button" onClick={onClear} title="Clear and search again"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-white transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      <p className={`text-xs mt-1.5 ${locked ? "text-slate-400" : "text-blue-400"}`}>
+        {locked ? "Vehicle matched. Clear to search another registration." : LOOKUP.autosuggest.helperText}
+      </p>
+
+      {showList && (
+        <ul id="reg-listbox" role="listbox" aria-label="Matching vehicles"
+          className="absolute z-20 left-0 right-0 mt-1 max-h-72 overflow-y-auto rounded-xl border border-blue-200 bg-white shadow-xl shadow-blue-900/15">
+          {results.length === 0 ? (
+            <li className="px-3 py-4 text-xs text-blue-300 text-center">{LOOKUP.autosuggest.emptyText}</li>
+          ) : (
+            <>
+              {results.map((r, i) => (
+                <li key={r.quoteRef} id={`reg-option-${i}`} role="option" aria-selected={i === highlight}
+                  onMouseEnter={() => setHighlight(i)}
+                  onMouseDown={(e) => { e.preventDefault(); choose(r); }}
+                  className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer border-b border-blue-50 last:border-b-0 transition-colors
+                    ${i === highlight ? "bg-blue-50" : "bg-white"}`}>
+                  <div className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center transition-colors
+                    ${i === highlight ? "bg-blue-600" : "bg-blue-100"}`}>
+                    <svg className={`w-4 h-4 ${i === highlight ? "text-white" : "text-blue-500"}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="text-sm font-bold text-blue-900 font-mono tracking-tight">{r.vehicle.registrationNumber}</span>
+                      <span className="text-xs font-semibold text-blue-400 shrink-0 tabular-nums">{r.vehicle.yearOfManufacture}</span>
+                    </div>
+                    <p className="text-xs text-blue-600 truncate mt-0.5">{r.vehicle.make} {r.vehicle.model}</p>
+                    <p className="text-xs text-blue-300 truncate">{r.client.name ?? "—"} · {r.intermediary.name}</p>
+                  </div>
+                </li>
+              ))}
+              <li className="px-3 py-1.5 text-[10px] uppercase tracking-wide text-blue-300 bg-blue-50/60 border-t border-blue-100">
+                {results.length} of {LOOKUP.records.length} vehicles on record
+              </li>
+            </>
+          )}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -127,6 +346,50 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { childre
         focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all duration-150 appearance-none ${props.className ?? ""}`}>
       {props.children}
     </select>
+  );
+}
+
+function RecordDetail({ record }: { record: VehicleRecord }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = recordDetailRows(record);
+  const visible = expanded ? rows : rows.slice(0, 4);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-100 border-b border-slate-200">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Policy record</p>
+          <p className="text-xs font-mono text-slate-600 truncate">{record.quoteRef}</p>
+        </div>
+        <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 border
+          ${record.sourceOrigin === "off-portal"
+            ? "text-amber-700 bg-amber-50 border-amber-200"
+            : "text-blue-600 bg-blue-50 border-blue-200"}`}>
+          {record.sourceOrigin}
+        </span>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-3 py-2.5">
+        {visible.map(({ label, value }) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+            <dd className="text-xs text-slate-600 truncate" title={value}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {rows.length > 4 && (
+        <button type="button" onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide
+            text-slate-400 hover:text-blue-600 hover:bg-white border-t border-slate-200 transition-colors">
+          {expanded ? "Show less" : `Show ${rows.length - 4} more`}
+          <svg className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -200,9 +463,39 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [garageLocation, setGarageLocation] = useState("");
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("");
   const [submitted, setSubmitted] = useState(false);
+  const [vehicle, setVehicle] = useState(EMPTY_VEHICLE);
+  const [intermediary, setIntermediary] = useState(EMPTY_INTERMEDIARY);
+  const [insured, setInsured] = useState(EMPTY_INSURED);
+  const [selectedRecord, setSelectedRecord] = useState<VehicleRecord | null>(null);
+  const autofilled = selectedRecord !== null;
   const [docs, setDocs] = useState<Record<DocKey, File | null>>({
     kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null,
   });
+
+  const handleVehicleSelect = (r: VehicleRecord) => {
+    setVehicle({
+      registrationNumber: r.vehicle.registrationNumber,
+      make: r.vehicle.make,
+      model: r.vehicle.model,
+      yearOfManufacture: String(r.vehicle.yearOfManufacture),
+    });
+    setIntermediary({
+      name: r.intermediary.name,
+      code: r.intermediary.code ?? "",
+      phone: r.intermediary.phone ?? "",
+      email: r.intermediary.email ?? "",
+    });
+    setInsured({ name: r.client.name ?? "", idNumber: r.client.idNumber ?? "" });
+    setSelectedRecord(r);
+    setPartyType("intermediary");
+  };
+
+  const handleVehicleClear = () => {
+    setVehicle(EMPTY_VEHICLE);
+    setIntermediary(EMPTY_INTERMEDIARY);
+    setInsured(EMPTY_INSURED);
+    setSelectedRecord(null);
+  };
 
   const handleDocChange = (key: DocKey, file: File | null) => setDocs((p) => ({ ...p, [key]: file }));
   const availableDelivery = garageLocation ? DELIVERY_MODES[garageLocation] ?? [] : [];
@@ -210,6 +503,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   const handleReset = () => {
     setStep(0); setClaimType(""); setGarageLocation(""); setDeliveryMode(""); setSubmitted(false);
+    setVehicle(EMPTY_VEHICLE); setIntermediary(EMPTY_INTERMEDIARY); setInsured(EMPTY_INSURED); setSelectedRecord(null);
     setDocs({ kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null });
   };
 
@@ -306,22 +600,34 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                   <SectionCard title="Vehicle Details" subtitle="Registration and car identification">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="col-span-2">
-                        <Label required>Registration Number</Label>
-                        <Input placeholder="KAA 000A" required />
+                        <Label required locked={autofilled}>Registration Number</Label>
+                        <RegistrationAutosuggest
+                          value={vehicle.registrationNumber}
+                          locked={autofilled}
+                          onChange={(v) => setVehicle((p) => ({ ...p, registrationNumber: v }))}
+                          onSelect={handleVehicleSelect}
+                          onClear={handleVehicleClear}
+                        />
                       </div>
                       <div>
-                        <Label required>Make</Label>
-                        <Input placeholder="Toyota" required />
+                        <Label required locked={autofilled}>Make</Label>
+                        <Input placeholder="Toyota" required locked={autofilled} value={vehicle.make}
+                          onChange={(e) => setVehicle((p) => ({ ...p, make: e.target.value }))} />
                       </div>
                       <div>
-                        <Label required>Model</Label>
-                        <Input placeholder="Fielder" required />
+                        <Label required locked={autofilled}>Model</Label>
+                        <Input placeholder="Fielder" required locked={autofilled} value={vehicle.model}
+                          onChange={(e) => setVehicle((p) => ({ ...p, model: e.target.value }))} />
                       </div>
                       <div className="col-span-2">
-                        <Label required>Year of Manufacture</Label>
-                        <Input placeholder="2019" type="number" min={1980} max={new Date().getFullYear()} required />
+                        <Label required locked={autofilled}>Year of Manufacture</Label>
+                        <Input placeholder="2019" type={autofilled ? "text" : "number"} min={1980} max={new Date().getFullYear()}
+                          required locked={autofilled} value={vehicle.yearOfManufacture}
+                          onChange={(e) => setVehicle((p) => ({ ...p, yearOfManufacture: e.target.value }))} />
                       </div>
                     </div>
+
+                    {selectedRecord && <RecordDetail record={selectedRecord} />}
                   </SectionCard>
 
                   <SectionCard title="Party Details" subtitle="Intermediary or insured contact">
@@ -338,23 +644,39 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                       {partyType === "intermediary" ? (
                         <>
                           <div>
-                            <Label required>Intermediary Name</Label>
-                            <Input placeholder="Jane Mwangi" required />
+                            <Label required locked={autofilled}>Intermediary Name</Label>
+                            <Input placeholder="Jane Mwangi" required locked={autofilled} value={intermediary.name}
+                              onChange={(e) => setIntermediary((p) => ({ ...p, name: e.target.value }))} />
                           </div>
                           <div>
-                            <Label required>Agent Code</Label>
-                            <Input placeholder="AG-2024-00142" required />
+                            <Label required locked={autofilled}>Intermediary Code</Label>
+                            <Input placeholder="AG-2024-00142" required locked={autofilled} value={intermediary.code}
+                              onChange={(e) => setIntermediary((p) => ({ ...p, code: e.target.value }))} />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="min-w-0">
+                              <Label locked={autofilled}>Phone</Label>
+                              <Input placeholder="0712 345 678" type="tel" locked={autofilled} value={intermediary.phone}
+                                onChange={(e) => setIntermediary((p) => ({ ...p, phone: e.target.value }))} />
+                            </div>
+                            <div className="min-w-0">
+                              <Label locked={autofilled}>Email</Label>
+                              <Input placeholder="agent@broker.co.ke" type="email" locked={autofilled} value={intermediary.email}
+                                onChange={(e) => setIntermediary((p) => ({ ...p, email: e.target.value }))} />
+                            </div>
                           </div>
                         </>
                       ) : (
                         <>
                           <div>
-                            <Label required>Insured Name</Label>
-                            <Input placeholder="John Kamau Njoroge" required />
+                            <Label required locked={autofilled}>Insured Name</Label>
+                            <Input placeholder="John Kamau Njoroge" required locked={autofilled} value={insured.name}
+                              onChange={(e) => setInsured((p) => ({ ...p, name: e.target.value }))} />
                           </div>
                           <div>
-                            <Label required>ID Number</Label>
-                            <Input placeholder="12345678" required />
+                            <Label required locked={autofilled}>ID Number</Label>
+                            <Input placeholder="12345678" required locked={autofilled} value={insured.idNumber}
+                              onChange={(e) => setInsured((p) => ({ ...p, idNumber: e.target.value }))} />
                           </div>
                         </>
                       )}
