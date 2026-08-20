@@ -1,0 +1,10 @@
+{
+  "description": "Streamlines first notice of loss submissions by capturing detailed vehicle, insured, claim, and document info for efficient insurance processing.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
