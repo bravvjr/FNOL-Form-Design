@@ -4,6 +4,20 @@ import ClaimTracking from "./ClaimTracking";
 type ClaimType = "Normal" | "Partial Theft" | "Total Loss" | "Windscreen" | "";
 type DeliveryMode = "Garage Collection" | "Home Delivery" | "Courier" | "";
 
+const ACCIDENT_LOCATIONS = [
+  "Nairobi",
+  "Mombasa",
+  "Kisumu",
+  "Nakuru",
+  "Eldoret",
+  "Thika",
+  "Nyeri",
+  "Meru",
+  "Kakamega",
+  "Machakos",
+  "Other",
+];
+
 const GARAGE_LOCATIONS = [
   "Nairobi - Westlands",
   "Nairobi - Industrial Area",
@@ -24,6 +38,13 @@ const DELIVERY_MODES: Record<string, DeliveryMode[]> = {
   "Thika - Blue Post": ["Garage Collection", "Courier"],
 };
 
+const CLAIM_SUBTYPES: Record<Exclude<ClaimType, "">, string[]> = {
+  Normal: ["Collision with Another Vehicle", "Collision with Stationary Object", "Rollover", "Single-Vehicle Accident"],
+  "Partial Theft": ["Wheels / Rims", "Battery", "Side Mirrors", "Radio / Infotainment", "Number Plates"],
+  "Total Loss": ["Beyond Economic Repair (BER)", "Full Theft (Unrecovered)", "Fire Damage"],
+  Windscreen: ["Windscreen Only", "Windscreen + Other Glass Panels"],
+};
+
 type DocKey = "kyc" | "policeAbstract" | "drivingLicence" | "claimForm";
 const DOC_LABELS: Record<DocKey, string> = {
   kyc: "KYC Document",
@@ -35,6 +56,7 @@ const DOC_LABELS: Record<DocKey, string> = {
 const STEPS = [
   { label: "Vehicle & Party", desc: "Car details and contact" },
   { label: "Incident", desc: "Date and claim type" },
+  { label: "Circumstances", desc: "Other parties and impact" },
   { label: "Garage & Docs", desc: "Location and uploads" },
 ];
 
@@ -130,30 +152,27 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { childre
   );
 }
 
-function ClaimTypeCard({ type, selected, onSelect, icon, description }: {
-  type: string; selected: boolean; onSelect: () => void; icon: React.ReactNode; description: string;
+function YesNoSelect({ label, hint, value, onChange }: {
+  label: string; hint: string; value: boolean | null; onChange: (v: boolean) => void;
 }) {
   return (
-    <button type="button" onClick={onSelect}
-      className={`relative w-full text-left rounded-lg border p-3 transition-all duration-150
-        ${selected ? "border-blue-500 bg-blue-50 shadow-sm shadow-blue-100" : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60"}`}>
-      <div className="flex items-start gap-2.5">
-        <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${selected ? "bg-blue-100" : "bg-blue-50"}`}>
-          {icon}
-        </div>
-        <div>
-          <p className={`text-xs font-bold ${selected ? "text-blue-700" : "text-blue-900"}`}>{type}</p>
-          <p className="text-xs text-blue-400 mt-0.5 leading-relaxed">{description}</p>
-        </div>
-      </div>
-      {selected && (
-        <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center">
-          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    <div>
+      <Label required>{label}</Label>
+      <div className="relative">
+        <Select value={value === null ? "" : value ? "yes" : "no"}
+          onChange={(e) => onChange(e.target.value === "yes")} required>
+          <option value="">Select...</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </Select>
+        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-      )}
-    </button>
+      </div>
+      <p className="text-xs text-blue-400 mt-1.5 leading-relaxed">{hint}</p>
+    </div>
   );
 }
 
@@ -197,6 +216,11 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState(0);
   const [partyType, setPartyType] = useState<"intermediary" | "insured">("intermediary");
   const [claimType, setClaimType] = useState<ClaimType>("");
+  const [claimSubType, setClaimSubType] = useState("");
+  const [accidentLocation, setAccidentLocation] = useState("");
+  const [otherVehiclesInvolved, setOtherVehiclesInvolved] = useState<boolean | null>(null);
+  const [tppd, setTppd] = useState<boolean | null>(null);
+  const [injuriesFatalities, setInjuriesFatalities] = useState<boolean | null>(null);
   const [garageLocation, setGarageLocation] = useState("");
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("");
   const [submitted, setSubmitted] = useState(false);
@@ -205,21 +229,20 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   });
 
   const handleDocChange = (key: DocKey, file: File | null) => setDocs((p) => ({ ...p, [key]: file }));
+  const handleClaimTypeChange = (type: ClaimType) => { setClaimType(type); setClaimSubType(""); };
   const availableDelivery = garageLocation ? DELIVERY_MODES[garageLocation] ?? [] : [];
   const handleGarageChange = (loc: string) => { setGarageLocation(loc); setDeliveryMode(""); };
 
   const handleReset = () => {
-    setStep(0); setClaimType(""); setGarageLocation(""); setDeliveryMode(""); setSubmitted(false);
+    setStep(0); setClaimType(""); setClaimSubType(""); setAccidentLocation("");
+    setOtherVehiclesInvolved(null); setTppd(null); setInjuriesFatalities(null);
+    setGarageLocation(""); setDeliveryMode(""); setSubmitted(false);
     setDocs({ kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null });
   };
 
   const handleClose = () => { handleReset(); onClose(); };
 
   if (!open) return null;
-
-  const claimIcon = (type: ClaimType, icon: React.ReactNode) => (
-    <span className={claimType === type ? "text-blue-600" : "text-blue-400"}>{icon}</span>
-  );
 
   return (
     <div
@@ -365,41 +388,96 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
               {/* Step 2: Date of Loss + Nature of Claim */}
               {step === 1 && (
-                <div className="flex gap-5" style={{ animation: "slideIn 0.2s ease" }}>
-                  <SectionCard title="Loss Details" subtitle="When the incident occurred">
-                    <div>
-                      <Label required>Date of Loss</Label>
-                      <Input type="date" required max={new Date().toISOString().split("T")[0]} />
-                    </div>
-                    <div className="mt-2 p-3 rounded-lg bg-blue-600/5 border border-blue-100">
-                      <p className="text-xs text-blue-400 leading-relaxed">
-                        Enter the exact date the incident occurred. For incidents spanning multiple days, enter the date first noticed.
-                      </p>
+                <div className="flex gap-5 items-start" style={{ animation: "slideIn 0.2s ease" }}>
+                  <SectionCard title="Loss Details" subtitle="When and where the incident occurred">
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <Label required>Date of Loss</Label>
+                        <Input type="date" required max={new Date().toISOString().split("T")[0]} />
+                      </div>
+                      <div>
+                        <Label required>Accident Location</Label>
+                        <div className="relative">
+                          <Select value={accidentLocation} onChange={(e) => setAccidentLocation(e.target.value)} required>
+                            <option value="">Select location...</option>
+                            {ACCIDENT_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+                          </Select>
+                          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                            <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </SectionCard>
 
                   <SectionCard title="Nature of Claim" subtitle="Select the incident category">
-                    <div className="grid grid-cols-1 gap-2">
-                      {([
-                        { type: "Normal", desc: "Minor accident or partial collision damage", path: "M8.25 18.75a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h6m-9 0H3.375a1.125 1.125 0 01-1.125-1.125V14.25m17.25 4.5a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m3 0h1.125c.621 0 1.129-.504 1.09-1.124a17.902 17.902 0 00-3.213-9.193 2.056 2.056 0 00-1.58-.86H14.25M16.5 18.75h-2.25m0-11.177v-.958c0-.568-.422-1.048-.987-1.106a48.554 48.554 0 00-10.026 0 1.106 1.106 0 00-.987 1.106v7.635m12-6.677v6.677m0 4.5v-4.5m0 0h-12" },
-                        { type: "Partial Theft", desc: "Accessories or parts stolen, vehicle intact", path: "M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z" },
-                        { type: "Total Loss", desc: "Beyond economic repair or fully stolen", path: "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" },
-                        { type: "Windscreen", desc: "Glass panel or windscreen damage only", path: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" },
-                      ] as { type: ClaimType; desc: string; path: string }[]).map(({ type, desc, path }) => (
-                        <ClaimTypeCard key={type} type={type} selected={claimType === type} onSelect={() => setClaimType(type)} description={desc}
-                          icon={claimIcon(type, (
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+                    <div>
+                      <Label required>Claim Type</Label>
+                      <div className="relative">
+                        <Select value={claimType} onChange={(e) => handleClaimTypeChange(e.target.value as ClaimType)} required>
+                          <option value="">Select claim type...</option>
+                          {(Object.keys(CLAIM_SUBTYPES) as Exclude<ClaimType, "">[]).map((t) => <option key={t} value={t}>{t}</option>)}
+                        </Select>
+                        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+
+                    {claimType && (
+                      <div style={{ animation: "slideIn 0.18s ease" }}>
+                        <Label required>Specify</Label>
+                        <div className="relative">
+                          <Select value={claimSubType} onChange={(e) => setClaimSubType(e.target.value)} required>
+                            <option value="">Select detail...</option>
+                            {CLAIM_SUBTYPES[claimType].map((s) => <option key={s} value={s}>{s}</option>)}
+                          </Select>
+                          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                            <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                             </svg>
-                          ))} />
-                      ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </SectionCard>
+                </div>
+              )}
+
+              {/* Step 3: Incident Circumstances */}
+              {step === 2 && (
+                <div style={{ animation: "slideIn 0.2s ease" }}>
+                  <SectionCard title="Incident Circumstances" subtitle="Other parties and impact">
+                    <div className="grid grid-cols-1 gap-3">
+                      <YesNoSelect
+                        label="Other Vehicles Involved"
+                        hint="Were any other vehicles involved in the accident?"
+                        value={otherVehiclesInvolved}
+                        onChange={setOtherVehiclesInvolved}
+                      />
+                      <YesNoSelect
+                        label="Third Party Property Damage (TPPD)"
+                        hint="Was a third party injured, or was third-party property damaged, as a result of the accident?"
+                        value={tppd}
+                        onChange={setTppd}
+                      />
+                      <YesNoSelect
+                        label="Injuries / Fatalities"
+                        hint="Were there any injuries or fatalities to the driver or passengers of the insured vehicle?"
+                        value={injuriesFatalities}
+                        onChange={setInjuriesFatalities}
+                      />
                     </div>
                   </SectionCard>
                 </div>
               )}
 
-              {/* Step 3: Garage + Documents */}
-              {step === 2 && (
+              {/* Step 4: Garage + Documents */}
+              {step === 3 && (
                 <div className="flex gap-5" style={{ animation: "slideIn 0.2s ease" }}>
                   <SectionCard title="Garage & Delivery" subtitle="Approved garage and return preference">
                     <div>
