@@ -18,11 +18,24 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import {
+  CLAIM_ALERTS,
+  CLAIM_COMMENTS,
+  CLAIM_SLAS,
   CLAIM_STAGES,
   DEMO_CLAIM,
   INITIAL_CURRENT_INDEX,
   type ClaimActivity,
+  type ClaimAlert,
+  type ClaimCheckoff,
+  type ClaimComment,
   type ClaimDocument,
+  type ClaimField,
+  type ClaimFlag,
+  type ClaimOffer,
+  type ClaimPart,
+  type ClaimPerson,
+  type ClaimPhoto,
+  type ClaimSla,
   type ClaimStage,
   type StageKind,
 } from "./claimTrackingData";
@@ -116,6 +129,260 @@ function FileIcon({ kind }: { kind: ClaimDocument["kind"] }) {
     <svg className="w-4 h-4 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
     </svg>
+  );
+}
+
+function flagClass(tone: ClaimFlag["tone"]) {
+  if (tone === "ok") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (tone === "warn") return "bg-amber-50 text-amber-800 border-amber-200";
+  return "bg-blue-50 text-blue-700 border-blue-100";
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">{children}</h3>
+  );
+}
+
+function FieldGrid({ fields }: { fields: ClaimField[] }) {
+  if (fields.length === 0) return null;
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+      {fields.map((field) => (
+        <div key={field.label} className="border-b border-slate-100 pb-2">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">{field.label}</p>
+          <p className={`text-sm mt-0.5 ${field.emphasize ? "text-blue-700 font-bold" : "text-slate-800 font-medium"}`}>
+            {field.value}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PeopleRow({ people }: { people: ClaimPerson[] }) {
+  if (people.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mb-6">
+      {people.map((person) => (
+        <div key={`${person.role}-${person.name}`} className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-50 border border-slate-100">
+          <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold flex items-center justify-center">
+            {initials(person.name)}
+          </div>
+          <div>
+            <p className="text-xs font-semibold text-slate-800">{person.name}</p>
+            <p className="text-[11px] text-slate-400">{person.role}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PartsTable({ parts }: { parts: ClaimPart[] }) {
+  if (parts.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <SectionTitle>Parts and services</SectionTitle>
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-400">
+            <tr>
+              <th className="text-left font-semibold px-3 py-2">Item</th>
+              <th className="text-left font-semibold px-3 py-2">Type</th>
+              <th className="text-left font-semibold px-3 py-2">Action</th>
+              <th className="text-right font-semibold px-3 py-2">Amount</th>
+              <th className="text-right font-semibold px-3 py-2">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parts.map((part) => (
+              <tr key={part.name} className="border-t border-slate-100">
+                <td className="px-3 py-2 font-medium text-slate-800">{part.name}</td>
+                <td className="px-3 py-2 text-slate-500">{part.category}</td>
+                <td className="px-3 py-2 text-slate-500">{part.action}</td>
+                <td className="px-3 py-2 text-right text-slate-700">{part.amount}</td>
+                <td className="px-3 py-2 text-right text-slate-500">{part.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function OffersList({ offers }: { offers: ClaimOffer[] }) {
+  if (offers.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <SectionTitle>Offer group</SectionTitle>
+      <div className="flex flex-col gap-2">
+        {offers.map((offer) => (
+          <div key={offer.provider} className="rounded-xl border border-slate-200 px-3 py-2.5 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">{offer.provider}</p>
+              <p className="text-[11px] text-slate-400">{offer.offeredAs} · quoted {offer.quoted}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-bold text-slate-800">{offer.amount}</p>
+              <p className="text-[11px] text-slate-500">{offer.status}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ClaimSnapshot() {
+  const rows = [
+    { label: "Insured", value: DEMO_CLAIM.insured },
+    { label: "Policy", value: DEMO_CLAIM.policy },
+    { label: "Location", value: DEMO_CLAIM.location },
+    { label: "Loss date", value: DEMO_CLAIM.lossDate },
+    { label: "Chassis", value: DEMO_CLAIM.chassis },
+    { label: "Odometer", value: DEMO_CLAIM.odometer },
+  ];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 h-full">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Claim snapshot</p>
+          <p className="text-sm font-semibold text-slate-800 mt-0.5">
+            {DEMO_CLAIM.vehicle} · {DEMO_CLAIM.registration}
+          </p>
+        </div>
+        <span className="shrink-0 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full">
+          {DEMO_CLAIM.repairOption}
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+        {rows.map((row) => (
+          <div key={row.label}>
+            <p className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">{row.label}</p>
+            <p className="text-xs text-slate-700 font-medium truncate">{row.value}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AlertsPanel({ alerts }: { alerts: ClaimAlert[] }) {
+  return (
+    <div>
+      <SectionTitle>Claim alerts</SectionTitle>
+      <div className="flex flex-col gap-2">
+        {alerts.map((alert) => (
+          <div key={alert.title} className={`rounded-lg border px-3 py-2 ${flagClass(alert.tone)}`}>
+            <p className="text-xs font-semibold">{alert.title}</p>
+            <p className="text-[11px] mt-0.5 opacity-80 leading-relaxed">{alert.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlaRow({ items }: { items: ClaimSla[] }) {
+  const styles = {
+    met: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    due: "bg-amber-50 text-amber-800 border-amber-200",
+    upcoming: "bg-slate-50 text-slate-500 border-slate-200",
+  };
+  const labels = { met: "Met", due: "Due", upcoming: "Upcoming" };
+  return (
+    <div>
+      <SectionTitle>SLA / TAT</SectionTitle>
+      <div className="grid grid-cols-2 gap-2">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-lg border border-slate-200 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-slate-800">{item.label}</p>
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${styles[item.status]}`}>
+                {labels[item.status]}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">{item.due}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PhotosGrid({ photos }: { photos: ClaimPhoto[] }) {
+  if (photos.length === 0) {
+    return <p className="text-[11px] text-slate-400">No photos on this stage.</p>;
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {photos.map((photo) => (
+        <div key={photo.label} className="rounded-lg overflow-hidden border border-slate-200 bg-white">
+          <img
+            src={photo.src}
+            alt={photo.label}
+            className="h-20 w-full object-cover"
+          />
+          <div className="px-2 py-1.5">
+            <p className="text-[11px] font-semibold text-slate-700 truncate">{photo.label}</p>
+            <p className="text-[10px] text-slate-400">{photo.association}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CommentsList({ comments }: { comments: ClaimComment[] }) {
+  return (
+    <ul className="flex flex-col gap-2">
+      {comments.map((comment) => (
+        <li key={`${comment.at}-${comment.author}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-800">{comment.author}</p>
+            <p className="text-[10px] text-slate-400">{comment.at}</p>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            {comment.role}
+            {comment.field ? ` · ${comment.field}` : ""}
+          </p>
+          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{comment.body}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CheckoffList({ checkoffs }: { checkoffs: ClaimCheckoff[] }) {
+  if (checkoffs.length === 0) return null;
+  return (
+    <div className="mb-6">
+      <SectionTitle>Part check-off</SectionTitle>
+      <div className="rounded-xl border border-slate-200 overflow-hidden">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 text-slate-400">
+            <tr>
+              <th className="text-left font-semibold px-3 py-2">Item</th>
+              <th className="text-left font-semibold px-3 py-2">Repair</th>
+              <th className="text-left font-semibold px-3 py-2">Receipt</th>
+              <th className="text-left font-semibold px-3 py-2">Delivery</th>
+            </tr>
+          </thead>
+          <tbody>
+            {checkoffs.map((row) => (
+              <tr key={row.name} className="border-t border-slate-100">
+                <td className="px-3 py-2 font-medium text-slate-800">{row.name}</td>
+                <td className="px-3 py-2 text-slate-500">{row.repair}</td>
+                <td className="px-3 py-2 text-slate-500">{row.receipt}</td>
+                <td className="px-3 py-2 text-slate-500">{row.delivery}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -223,14 +490,19 @@ function DetailColumn({
   return (
     <main className="flex-1 min-w-0 flex flex-col bg-white">
       <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="flex items-center gap-2 mb-5">
+        <div className="flex flex-wrap items-center gap-2 mb-5">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-50 border border-blue-100 text-[11px] font-semibold text-blue-700">
             <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center">
               {index + 1}
             </span>
-            {DEMO_CLAIM.nature}
+            {stage.code}
           </span>
           <KindBadge kind={kind} />
+          {stage.parentStage && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border bg-slate-50 text-slate-500 border-slate-200">
+              Sub-status of {stage.parentStage}
+            </span>
+          )}
         </div>
 
         <div className="flex items-start gap-2 mb-1">
@@ -243,31 +515,37 @@ function DetailColumn({
             </svg>
           </span>
         </div>
-        <p className="text-sm text-slate-500 mb-6">{stage.caption}</p>
+        <p className="text-sm text-slate-500 mb-4">{stage.caption}</p>
 
-        <div className="flex items-center gap-3 mb-6 p-3 rounded-xl bg-slate-50 border border-slate-100">
-          <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
-            {stage.owner.split(" ").map((n) => n[0]).slice(0, 2).join("")}
+        {stage.flags.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-5">
+            {stage.flags.map((flag) => (
+              <span key={flag.label} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${flagClass(flag.tone)}`}>
+                {flag.label}
+              </span>
+            ))}
           </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-800">{stage.owner}</p>
-            <p className="text-xs text-slate-400">{stage.ownerRole}</p>
-          </div>
-        </div>
+        )}
+
+        <PeopleRow people={stage.people} />
 
         <p className="text-sm text-slate-600 leading-relaxed mb-6">{stage.narrative}</p>
 
-        <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">Stage details</h3>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-3 mb-8">
-          {stage.fields.map((field) => (
-            <div key={field.label} className="border-b border-slate-100 pb-2">
-              <p className="text-[11px] uppercase tracking-wide text-slate-400 font-semibold">{field.label}</p>
-              <p className={`text-sm mt-0.5 ${field.emphasize ? "text-blue-700 font-bold" : "text-slate-800 font-medium"}`}>
-                {field.value}
-              </p>
-            </div>
-          ))}
+        <div className="mb-6">
+          <SectionTitle>Stage details</SectionTitle>
+          <FieldGrid fields={stage.fields} />
         </div>
+
+        {stage.costs.length > 0 && (
+          <div className="mb-6">
+            <SectionTitle>Cost breakdown</SectionTitle>
+            <FieldGrid fields={stage.costs} />
+          </div>
+        )}
+
+        <OffersList offers={stage.offers} />
+        <PartsTable parts={stage.parts} />
+        <CheckoffList checkoffs={stage.checkoffs} />
 
         {kind === "upcoming" && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-100 mb-4">
@@ -275,7 +553,7 @@ function DetailColumn({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <p className="text-xs text-amber-800 leading-relaxed">
-              This stage is locked until earlier steps are complete. Fields above show the data we expect to capture here.
+              This stage is locked until earlier steps are complete. Fields above show the data the repairs service captures here.
             </p>
           </div>
         )}
@@ -375,6 +653,16 @@ function DocsColumn({ stage, kind }: { stage: ClaimStage; kind: StageKind }) {
         )}
 
         <div>
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 px-0.5">Photos</h3>
+          <PhotosGrid photos={stage.photos} />
+        </div>
+
+        <div>
+          <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 px-0.5">Comments</h3>
+          <CommentsList comments={CLAIM_COMMENTS} />
+        </div>
+
+        <div>
           <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 px-0.5">Activity</h3>
           {stage.activities.length === 0 ? (
             <p className="text-[11px] text-slate-400 px-0.5">No activity logged on this stage yet.</p>
@@ -445,6 +733,7 @@ export default function ClaimTracking({ onBack }: { onBack: () => void }) {
   const [currentIndex, setCurrentIndex] = useState(INITIAL_CURRENT_INDEX);
   const [selectedIndex, setSelectedIndex] = useState(INITIAL_CURRENT_INDEX);
   const [toast, setToast] = useState<string | null>(null);
+  const [showSnapshot, setShowSnapshot] = useState(false);
 
   const stage = CLAIM_STAGES[selectedIndex];
   const kind = stageKind(selectedIndex, currentIndex);
@@ -475,7 +764,9 @@ export default function ClaimTracking({ onBack }: { onBack: () => void }) {
     () => [
       DEMO_CLAIM.number,
       `${DEMO_CLAIM.vehicle} · ${DEMO_CLAIM.registration}`,
-      DEMO_CLAIM.insured,
+      DEMO_CLAIM.repairOption,
+      DEMO_CLAIM.excess,
+      `Analyst · ${DEMO_CLAIM.analyst}`,
     ],
     [],
   );
@@ -510,11 +801,35 @@ export default function ClaimTracking({ onBack }: { onBack: () => void }) {
             <span className="text-xs text-slate-600 font-medium">{bit}</span>
           </span>
         ))}
-        <span className="ml-auto shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-          Current · {currentName}
-        </span>
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowSnapshot((open) => !open)}
+            aria-expanded={showSnapshot}
+            className={cn(
+              "inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-colors",
+              showSnapshot
+                ? "text-blue-700 bg-blue-50 border-blue-200"
+                : "text-slate-600 bg-white border-slate-200 hover:bg-white/80",
+            )}
+          >
+            Snapshot
+            <ChevronRightIcon className={cn("size-3.5 transition-transform duration-200", showSnapshot && "rotate-90")} />
+          </button>
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+            Current · {currentName}
+          </span>
+        </div>
       </div>
+
+      {showSnapshot && (
+        <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 grid grid-cols-1 lg:grid-cols-3 gap-4" style={{ animation: "slideIn 0.18s ease" }}>
+          <ClaimSnapshot />
+          <AlertsPanel alerts={CLAIM_ALERTS} />
+          <SlaRow items={CLAIM_SLAS} />
+        </div>
+      )}
 
       <div className="flex-1 flex min-h-0">
         <ProgressColumn currentIndex={currentIndex} selectedIndex={selectedIndex} onSelect={setSelectedIndex} />
