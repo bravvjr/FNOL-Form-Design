@@ -370,30 +370,71 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { childre
     </select>
   );
 }
-function ClaimTypeCard({ type, selected, onSelect, icon, description }: {
-  type: string; selected: boolean; onSelect: () => void; icon: React.ReactNode; description: string;
+function RecordDetail({ record }: { record: VehicleRecord }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = recordDetailRows(record);
+  const visible = expanded ? rows : rows.slice(0, 4);
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+      <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-100 border-b border-slate-200">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Policy record</p>
+          <p className="text-xs font-mono text-slate-600 truncate">{record.quoteRef}</p>
+        </div>
+        <span className={`shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 border
+          ${record.sourceOrigin === "off-portal"
+            ? "text-amber-700 bg-amber-50 border-amber-200"
+            : "text-blue-600 bg-blue-50 border-blue-200"}`}>
+          {record.sourceOrigin}
+        </span>
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-2 px-3 py-2.5">
+        {visible.map(({ label, value }) => (
+          <div key={label} className="min-w-0">
+            <dt className="text-[10px] uppercase tracking-wide text-slate-400">{label}</dt>
+            <dd className="text-xs text-slate-600 truncate" title={value}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {rows.length > 4 && (
+        <button type="button" onClick={() => setExpanded((v) => !v)}
+          className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide
+            text-slate-400 hover:text-blue-600 hover:bg-white border-t border-slate-200 transition-colors">
+          {expanded ? "Show less" : `Show ${rows.length - 4} more`}
+          <svg className={`w-3 h-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+function YesNoSelect({ label, hint, value, onChange }: {
+  label: string; hint: string; value: boolean | null; onChange: (v: boolean) => void;
 }) {
   return (
-    <button type="button" onClick={onSelect}
-      className={`relative w-full text-left rounded-lg border p-3 transition-all duration-150
-        ${selected ? "border-blue-500 bg-blue-50 shadow-sm shadow-blue-100" : "border-blue-100 bg-white hover:border-blue-300 hover:bg-blue-50/60"}`}>
-      <div className="flex items-start gap-2.5">
-        <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${selected ? "bg-blue-100" : "bg-blue-50"}`}>
-          {icon}
-        </div>
-        <div>
-          <p className={`text-xs font-bold ${selected ? "text-blue-700" : "text-blue-900"}`}>{type}</p>
-          <p className="text-xs text-blue-400 mt-0.5 leading-relaxed">{description}</p>
-        </div>
-      </div>
-      {selected && (
-        <div className="absolute top-2 right-2 w-4 h-4 rounded-full bg-blue-600 flex items-center justify-center">
-          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    <div>
+      <Label required>{label}</Label>
+      <div className="relative">
+        <Select value={value === null ? "" : value ? "yes" : "no"}
+          onChange={(e) => onChange(e.target.value === "yes")} required>
+          <option value="">Select...</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </Select>
+        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-      )}
-    </button>
+      </div>
+      <p className="text-xs text-blue-400 mt-1.5 leading-relaxed">{hint}</p>
+    </div>
   );
 }
 
