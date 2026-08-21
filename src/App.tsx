@@ -275,8 +275,7 @@ function isTagSatisfied(tag: DocTag, docs: Record<DocKey, File | null>, combined
 
 const STEPS = [
   { label: "Vehicle & Party", desc: "Car details and contact" },
-  { label: "Incident", desc: "Date and claim type" },
-  { label: "Circumstances", desc: "Other parties and impact" },
+  { label: "Incident", desc: "Date, claim type and circumstances" },
   { label: "Location & Docs", desc: "Where it is and uploads" },
 ];
 
@@ -814,6 +813,24 @@ function ChoicePills({ value, onChange, options, name }: {
   );
 }
 
+/** A Yes/No question as the same radio-pill control used for Driven/Towed and Office/Home. */
+function YesNoPills({ label, hint, value, onChange }: {
+  label: string; hint: string; value: boolean | null; onChange: (v: boolean) => void;
+}) {
+  return (
+    <div>
+      <Label required>{label}</Label>
+      <ChoicePills
+        value={value === null ? "" : value ? "Yes" : "No"}
+        onChange={(v) => onChange(v === "Yes")}
+        options={["Yes", "No"]}
+        name={label}
+      />
+      <p className="text-xs text-blue-400 mt-1.5 leading-relaxed">{hint}</p>
+    </div>
+  );
+}
+
 /** "Contains" control: one file can hold several documents, so tags multi-select. */
 function TagMultiSelect({ selected, onToggle, invalid }: {
   selected: DocTag[]; onToggle: (t: DocTag) => void; invalid?: boolean;
@@ -1004,30 +1021,6 @@ function RecordDetail({ record }: { record: VehicleRecord }) {
           </svg>
         </button>
       )}
-    </div>
-  );
-}
-
-function YesNoSelect({ label, hint, value, onChange }: {
-  label: string; hint: string; value: boolean | null; onChange: (v: boolean) => void;
-}) {
-  return (
-    <div>
-      <Label required>{label}</Label>
-      <div className="relative">
-        <Select value={value === null ? "" : value ? "yes" : "no"}
-          onChange={(e) => onChange(e.target.value === "yes")} required>
-          <option value="">Select...</option>
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
-        </Select>
-        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </div>
-      </div>
-      <p className="text-xs text-blue-400 mt-1.5 leading-relaxed">{hint}</p>
     </div>
   );
 }
@@ -1399,55 +1392,40 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                 </div>
               )}
 
-              {/* Step 2: Date of Loss + Nature of Claim */}
+              {/* Step 2: Date of Loss, Nature of Claim + Circumstances */}
               {step === 1 && (
-                <div className="flex gap-5 items-start" style={{ animation: "slideIn 0.2s ease" }}>
-                  <SectionCard title="Loss Details" subtitle="When and where the incident occurred">
-                    <div className="grid grid-cols-1 gap-3">
-                      <div>
-                        <Label required>Date of Loss</Label>
-                        <Input
-                          type="date"
-                          required
-                          max={new Date().toISOString().split("T")[0]}
-                          onClick={(e) => e.currentTarget.showPicker?.()}
-                        />
-                      </div>
-                      <div>
-                        <Label required>Accident Location</Label>
-                        <AccidentLocationPicker
-                          value={accidentLocation}
-                          place={accidentPlace}
-                          onChange={setAccidentLocation}
-                          onSelect={setAccidentPlace}
-                        />
-                      </div>
-                    </div>
-                  </SectionCard>
-
-                  <SectionCard title="Nature of Claim" subtitle="Select the incident category">
-                    <div>
-                      <Label required>Claim Type</Label>
-                      <div className="relative">
-                        <Select value={claimType} onChange={(e) => handleClaimTypeChange(e.target.value as ClaimType)} required>
-                          <option value="">Select claim type...</option>
-                          {(Object.keys(CLAIM_SUBTYPES) as Exclude<ClaimType, "">[]).map((t) => <option key={t} value={t}>{t}</option>)}
-                        </Select>
-                        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                          </svg>
+                <div className="flex flex-col gap-5" style={{ animation: "slideIn 0.2s ease" }}>
+                  <div className="flex gap-5 items-start">
+                    <SectionCard title="Loss Details" subtitle="When and where the incident occurred">
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <Label required>Date of Loss</Label>
+                          <Input
+                            type="date"
+                            required
+                            max={new Date().toISOString().split("T")[0]}
+                            onClick={(e) => e.currentTarget.showPicker?.()}
+                          />
+                        </div>
+                        <div>
+                          <Label required>Accident Location</Label>
+                          <AccidentLocationPicker
+                            value={accidentLocation}
+                            place={accidentPlace}
+                            onChange={setAccidentLocation}
+                            onSelect={setAccidentPlace}
+                          />
                         </div>
                       </div>
-                    </div>
+                    </SectionCard>
 
-                    {claimType && (
-                      <div style={{ animation: "slideIn 0.18s ease" }}>
-                        <Label required>Specify</Label>
+                    <SectionCard title="Nature of Claim" subtitle="Select the incident category">
+                      <div>
+                        <Label required>Claim Type</Label>
                         <div className="relative">
-                          <Select value={claimSubType} onChange={(e) => setClaimSubType(e.target.value)} required>
-                            <option value="">Select detail...</option>
-                            {CLAIM_SUBTYPES[claimType].map((s) => <option key={s} value={s}>{s}</option>)}
+                          <Select value={claimType} onChange={(e) => handleClaimTypeChange(e.target.value as ClaimType)} required>
+                            <option value="">Select claim type...</option>
+                            {(Object.keys(CLAIM_SUBTYPES) as Exclude<ClaimType, "">[]).map((t) => <option key={t} value={t}>{t}</option>)}
                           </Select>
                           <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
                             <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1456,29 +1434,41 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                           </div>
                         </div>
                       </div>
-                    )}
-                  </SectionCard>
-                </div>
-              )}
 
-              {/* Step 3: Incident Circumstances */}
-              {step === 2 && (
-                <div style={{ animation: "slideIn 0.2s ease" }}>
+                      {claimType && (
+                        <div style={{ animation: "slideIn 0.18s ease" }}>
+                          <Label required>Specify</Label>
+                          <div className="relative">
+                            <Select value={claimSubType} onChange={(e) => setClaimSubType(e.target.value)} required>
+                              <option value="">Select detail...</option>
+                              {CLAIM_SUBTYPES[claimType].map((s) => <option key={s} value={s}>{s}</option>)}
+                            </Select>
+                            <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                              <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </SectionCard>
+                  </div>
+
                   <SectionCard title="Incident Circumstances" subtitle="Other parties and impact">
                     <div className="grid grid-cols-1 gap-3">
-                      <YesNoSelect
+                      <YesNoPills
                         label="Other Vehicles Involved"
                         hint="Were any other vehicles involved in the accident?"
                         value={otherVehiclesInvolved}
                         onChange={setOtherVehiclesInvolved}
                       />
-                      <YesNoSelect
+                      <YesNoPills
                         label="Third Party Property Damage (TPPD)"
                         hint="Was a third party injured, or was third-party property damaged, as a result of the accident?"
                         value={tppd}
                         onChange={setTppd}
                       />
-                      <YesNoSelect
+                      <YesNoPills
                         label="Injuries / Fatalities"
                         hint="Were there any injuries or fatalities to the driver or passengers of the insured vehicle?"
                         value={injuriesFatalities}
@@ -1489,8 +1479,8 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                 </div>
               )}
 
-              {/* Step 4: Vehicle location + Documents */}
-              {step === 3 && (
+              {/* Step 3: Vehicle location + Documents */}
+              {step === 2 && (
                 <div className="flex gap-5" style={{ animation: "slideIn 0.2s ease" }}>
                   <SectionCard title="Vehicle Location" subtitle="Where the vehicle is and how it got there">
                     <div>
