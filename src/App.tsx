@@ -101,7 +101,6 @@ function recordDetailRows(r: VehicleRecord): { label: string; value: string }[] 
 }
 
 type ClaimType = "Normal" | "Partial Theft" | "Total Loss" | "Windscreen" | "";
-type DeliveryMode = "Garage Collection" | "Home Delivery" | "Courier" | "";
 
 const ACCIDENT_LOCATIONS = [
   "Nairobi",
@@ -117,25 +116,46 @@ const ACCIDENT_LOCATIONS = [
   "Other",
 ];
 
-const GARAGE_LOCATIONS = [
-  "Nairobi - Westlands",
-  "Nairobi - Industrial Area",
-  "Mombasa - Mvita",
-  "Kisumu - Milimani",
-  "Nakuru - Town",
-  "Eldoret - Town",
-  "Thika - Blue Post",
+type VehicleLocation =
+  | ""
+  | "SanlamAllianz Assessment Centre"
+  | "Panel Garage"
+  | "Non-Panel Garage"
+  | "Other";
+
+const VEHICLE_LOCATIONS: Exclude<VehicleLocation, "">[] = [
+  "SanlamAllianz Assessment Centre",
+  "Panel Garage",
+  "Non-Panel Garage",
+  "Other",
 ];
 
-const DELIVERY_MODES: Record<string, DeliveryMode[]> = {
-  "Nairobi - Westlands": ["Garage Collection", "Home Delivery", "Courier"],
-  "Nairobi - Industrial Area": ["Garage Collection", "Home Delivery", "Courier"],
-  "Mombasa - Mvita": ["Garage Collection", "Home Delivery"],
-  "Kisumu - Milimani": ["Garage Collection", "Courier"],
-  "Nakuru - Town": ["Garage Collection", "Home Delivery"],
-  "Eldoret - Town": ["Garage Collection"],
-  "Thika - Blue Post": ["Garage Collection", "Courier"],
+/** Short hint under each option so the user picks correctly the first time. */
+const VEHICLE_LOCATION_HINTS: Record<Exclude<VehicleLocation, "">, string> = {
+  "SanlamAllianz Assessment Centre": "Vehicle is at our own assessment centre",
+  "Panel Garage": "One of our approved repair partners",
+  "Non-Panel Garage": "Any other garage - tell us which county",
+  Other: "Still at your office or home",
 };
+
+/** Placeholder until the panel-garage directory is wired to the API. */
+const PANEL_GARAGE_NAME = "Test garage";
+
+const OTHER_LOCATIONS = ["Office", "Home"];
+
+const TOWING_AGENTS = ["Murray Towing Service", "Other"];
+
+const KENYA_COUNTIES = [
+  "Baringo", "Bomet", "Bungoma", "Busia", "Elgeyo-Marakwet", "Embu", "Garissa",
+  "Homa Bay", "Isiolo", "Kajiado", "Kakamega", "Kericho", "Kiambu", "Kilifi",
+  "Kirinyaga", "Kisii", "Kisumu", "Kitui", "Kwale", "Laikipia", "Lamu",
+  "Machakos", "Makueni", "Mandera", "Marsabit", "Meru", "Migori", "Mombasa",
+  "Murang'a", "Nairobi", "Nakuru", "Nandi", "Narok", "Nyamira", "Nyandarua",
+  "Nyeri", "Samburu", "Siaya", "Taita-Taveta", "Tana River", "Tharaka-Nithi",
+  "Trans Nzoia", "Turkana", "Uasin Gishu", "Vihiga", "Wajir", "West Pokot",
+];
+
+
 
 const CLAIM_SUBTYPES: Record<Exclude<ClaimType, "">, string[]> = {
   Normal: ["Collision with Another Vehicle", "Collision with Stationary Object", "Rollover", "Single-Vehicle Accident"],
@@ -152,11 +172,37 @@ const DOC_LABELS: Record<DocKey, string> = {
   claimForm: "Claim Form",
 };
 
+/**
+ * What a single uploaded file can be tagged as containing. One scanned PDF often
+ * holds several of these, so the tags are a multi-select rather than one type.
+ */
+const DOC_TAGS = ["Copy of Log Book", "Police Abstract", "Claim Form", "Driving Licence"] as const;
+type DocTag = (typeof DOC_TAGS)[number];
+
+type CombinedDoc = { id: string; file: File | null; tags: DocTag[] };
+
+/** Cannot submit without these two, however they arrive. */
+const REQUIRED_TAGS: DocTag[] = ["Police Abstract", "Driving Licence"];
+
+/** Maps a required tag to the single-purpose slot that also satisfies it. */
+const TAG_TO_DOC_KEY: Partial<Record<DocTag, DocKey>> = {
+  "Police Abstract": "policeAbstract",
+  "Driving Licence": "drivingLicence",
+  "Claim Form": "claimForm",
+};
+
+/** A requirement is met by its own upload slot or by any combined file tagged with it. */
+function isTagSatisfied(tag: DocTag, docs: Record<DocKey, File | null>, combined: CombinedDoc[]) {
+  const key = TAG_TO_DOC_KEY[tag];
+  if (key && docs[key]) return true;
+  return combined.some((c) => c.file && c.tags.includes(tag));
+}
+
 const STEPS = [
   { label: "Vehicle & Party", desc: "Car details and contact" },
   { label: "Incident", desc: "Date and claim type" },
   { label: "Circumstances", desc: "Other parties and impact" },
-  { label: "Garage & Docs", desc: "Location and uploads" },
+  { label: "Location & Docs", desc: "Where it is and uploads" },
 ];
 
 function FileDropZone({ label, docKey, file, onChange }: {
@@ -370,6 +416,345 @@ function Select(props: React.SelectHTMLAttributes<HTMLSelectElement> & { childre
     </select>
   );
 }
+/** Select plus its chevron - the pairing was duplicated at every call site. */
+function SelectField({ value, onChange, placeholder, options, required, invalid, id }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: readonly string[];
+  required?: boolean;
+  invalid?: boolean;
+  id?: string;
+}) {
+  return (
+    <div className="relative">
+      <Select id={id} value={value} required={required} aria-invalid={invalid || undefined}
+        onChange={(e) => onChange(e.target.value)}
+        className={invalid ? "border-red-300 focus:border-red-500 focus:ring-red-100" : ""}>
+        <option value="">{placeholder}</option>
+        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+      </Select>
+      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+        <svg className={`w-3.5 h-3.5 ${invalid ? "text-red-400" : "text-blue-400"}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Children revealed by a parent choice sit inside this rail so it stays obvious
+ * they belong to the field above rather than reading as new top-level questions.
+ */
+function RevealGroup({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="relative pl-3 flex flex-col gap-3" style={{ animation: "slideIn 0.18s ease" }}>
+      <div className="absolute left-0 top-1 bottom-1 w-0.5 rounded-full bg-blue-200" aria-hidden="true" />
+      {children}
+    </div>
+  );
+}
+
+/** 47 counties is too many for a plain select, so this filters as you type. */
+function CountyPicker({ value, onChange, invalid }: {
+  value: string; onChange: (v: string) => void; invalid?: boolean;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  const needle = query.trim().toLowerCase();
+  const results = needle ? KENYA_COUNTIES.filter((c) => c.toLowerCase().includes(needle)) : KENYA_COUNTIES;
+
+  useEffect(() => setHighlight(0), [query]);
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const choose = (c: string) => { onChange(c); setQuery(""); setOpen(false); };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open || results.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => (h + 1) % results.length); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => (h - 1 + results.length) % results.length); }
+    else if (e.key === "Enter") { e.preventDefault(); choose(results[highlight]); }
+    else if (e.key === "Escape") { setOpen(false); }
+  };
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="relative">
+        <input
+          value={open ? query : value}
+          placeholder={value || "Search county..."}
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          onFocus={() => { setOpen(true); setQuery(""); }}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onKeyDown={onKeyDown}
+          className={`w-full bg-white border rounded-lg pl-9 pr-3 py-2.5 text-sm transition-all duration-150
+            focus:outline-none focus:ring-2
+            ${invalid
+              ? "border-red-300 text-red-900 placeholder-red-300 focus:border-red-500 focus:ring-red-100"
+              : "border-blue-200 text-blue-900 placeholder-blue-300 focus:border-blue-500 focus:ring-blue-100"}`}
+        />
+        <svg className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${invalid ? "text-red-300" : "text-blue-300"}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35m1.85-5.4a7.25 7.25 0 11-14.5 0 7.25 7.25 0 0114.5 0z" />
+        </svg>
+      </div>
+
+      {open && (
+        <ul role="listbox" aria-label="Counties"
+          className="absolute z-30 left-0 right-0 mt-1 max-h-52 overflow-y-auto rounded-lg border border-blue-200 bg-white shadow-lg shadow-blue-900/10">
+          {results.length === 0 ? (
+            <li className="px-3 py-3 text-xs text-blue-300 text-center">No county matches "{query}"</li>
+          ) : (
+            results.map((c, i) => (
+              <li key={c} role="option" aria-selected={c === value}
+                onMouseEnter={() => setHighlight(i)}
+                onMouseDown={(e) => { e.preventDefault(); choose(c); }}
+                className={`px-3 py-2 text-sm cursor-pointer flex items-center justify-between
+                  ${i === highlight ? "bg-blue-50 text-blue-900" : "text-blue-700"}`}>
+                {c}
+                {c === value && (
+                  <svg className="w-3.5 h-3.5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Two-option choice. Pills rather than a select: both options stay visible. */
+function ChoicePills({ value, onChange, options, name }: {
+  value: string; onChange: (v: string) => void; options: readonly string[]; name: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={name} className="grid grid-cols-2 gap-2">
+      {options.map((o) => {
+        const active = value === o;
+        return (
+          <button key={o} type="button" role="radio" aria-checked={active} onClick={() => onChange(o)}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-semibold transition-all duration-150
+              ${active
+                ? "border-blue-500 bg-blue-50 text-blue-700 shadow-sm shadow-blue-100"
+                : "border-blue-200 bg-white text-blue-500 hover:border-blue-300 hover:bg-blue-50/60"}`}>
+            <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0
+              ${active ? "border-blue-600" : "border-blue-300"}`}>
+              {active && <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />}
+            </span>
+            {o}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** "Contains" control: one file can hold several documents, so tags multi-select. */
+function TagMultiSelect({ selected, onToggle, invalid }: {
+  selected: DocTag[]; onToggle: (t: DocTag) => void; invalid?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const summary = selected.length === 0
+    ? "Select what this file contains"
+    : selected.length <= 2 ? selected.join(", ") : `${selected.length} documents selected`;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox" aria-expanded={open} aria-invalid={invalid || undefined}
+        className={`w-full flex items-center justify-between gap-2 bg-white border rounded-lg px-3 py-2.5 text-sm text-left transition-all duration-150
+          focus:outline-none focus:ring-2
+          ${invalid
+            ? "border-red-300 focus:border-red-500 focus:ring-red-100"
+            : "border-blue-200 focus:border-blue-500 focus:ring-blue-100"}`}>
+        <span className={`truncate ${selected.length ? "text-blue-900" : invalid ? "text-red-400" : "text-blue-300"}`}>
+          {summary}
+        </span>
+        <svg className={`w-3.5 h-3.5 shrink-0 transition-transform ${open ? "rotate-180" : ""} ${invalid ? "text-red-400" : "text-blue-400"}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <ul role="listbox" aria-multiselectable="true" aria-label="Document contents"
+          className="absolute z-30 left-0 right-0 mt-1 rounded-lg border border-blue-200 bg-white shadow-lg shadow-blue-900/10 overflow-hidden">
+          {DOC_TAGS.map((tag) => {
+            const checked = selected.includes(tag);
+            return (
+              <li key={tag} role="option" aria-selected={checked}
+                onMouseDown={(e) => { e.preventDefault(); onToggle(tag); }}
+                className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-blue-50 border-b border-blue-50 last:border-b-0">
+                <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors
+                  ${checked ? "bg-blue-600 border-blue-600" : "bg-white border-blue-300"}`}>
+                  {checked && (
+                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                    </svg>
+                  )}
+                </span>
+                <span className="text-sm text-blue-900 uppercase tracking-wide text-xs font-semibold">{tag}</span>
+                {REQUIRED_TAGS.includes(tag) && (
+                  <span className="ml-auto text-[10px] font-semibold uppercase tracking-wide text-blue-400">Required</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** One combined file: the upload itself plus what the user says is inside it. */
+function CombinedDocRow({ doc, index, onFile, onToggleTag, onRemove, showErrors }: {
+  doc: CombinedDoc;
+  index: number;
+  onFile: (id: string, file: File | null) => void;
+  onToggleTag: (id: string, tag: DocTag) => void;
+  onRemove: (id: string) => void;
+  showErrors: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const untagged = showErrors && doc.file !== null && doc.tags.length === 0;
+
+  return (
+    <div className="rounded-lg border border-blue-100 bg-white p-3 flex flex-col gap-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-bold text-blue-900">Combined Document {index + 1}</p>
+        <button type="button" onClick={() => onRemove(doc.id)}
+          aria-label={`Remove combined document ${index + 1}`}
+          className="w-7 h-7 rounded-md flex items-center justify-center text-blue-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <input ref={inputRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png"
+        onChange={(e) => onFile(doc.id, e.target.files?.[0] ?? null)} />
+
+      {doc.file ? (
+        <div className="flex items-center gap-2.5 rounded-lg bg-blue-50/60 border border-blue-100 px-3 py-2">
+          <div className="w-8 h-8 rounded-md bg-green-100 flex items-center justify-center shrink-0">
+            <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold text-blue-900 truncate">{doc.file.name}</p>
+            <p className="text-xs text-blue-400">{(doc.file.size / 1048576).toFixed(1)} MB · Uploaded</p>
+          </div>
+          <button type="button" onClick={() => inputRef.current?.click()}
+            className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-white transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+            </svg>
+            Replace
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => inputRef.current?.click()}
+          className="flex items-center gap-2.5 rounded-lg border-2 border-dashed border-blue-200 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50 px-3 py-3 transition-all duration-200 group">
+          <div className="w-8 h-8 rounded-md bg-blue-100 group-hover:bg-blue-200 flex items-center justify-center shrink-0 transition-colors">
+            <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          </div>
+          <div className="text-left">
+            <p className="text-xs font-semibold text-blue-900">Upload combined file</p>
+            <p className="text-xs text-blue-400 mt-0.5">One PDF or scan holding several documents</p>
+          </div>
+        </button>
+      )}
+
+      <div>
+        <label className={`block text-xs font-semibold uppercase tracking-wide mb-1.5 ${untagged ? "text-red-500" : "text-blue-700"}`}>
+          Contains{doc.file && <span className={untagged ? "text-red-400 ml-0.5" : "text-blue-400 ml-0.5"}>*</span>}
+        </label>
+        <TagMultiSelect
+          selected={doc.tags}
+          invalid={untagged}
+          onToggle={(t) => onToggleTag(doc.id, t)}
+        />
+        {untagged && (
+          <p role="alert" className="text-xs text-red-500 mt-1.5">
+            Tick what this file contains so we can match it against the required documents.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Turns the two hard requirements into visible progress rather than a wall the
+ * user only meets at submit time.
+ */
+function RequirementChecklist({ docs, combined, showErrors }: {
+  docs: Record<DocKey, File | null>; combined: CombinedDoc[]; showErrors: boolean;
+}) {
+  const rows = REQUIRED_TAGS.map((tag) => ({ tag, done: isTagSatisfied(tag, docs, combined) }));
+  const outstanding = rows.filter((r) => !r.done).length;
+
+  return (
+    <div className={`rounded-lg border p-3 ${outstanding === 0 ? "border-green-200 bg-green-50" : showErrors ? "border-red-200 bg-red-50" : "border-blue-100 bg-blue-50"}`}>
+      <p className={`text-xs font-bold mb-2 ${outstanding === 0 ? "text-green-700" : showErrors ? "text-red-600" : "text-blue-900"}`}>
+        {outstanding === 0 ? "Required documents received" : `${outstanding} required document${outstanding > 1 ? "s" : ""} still needed`}
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {rows.map(({ tag, done }) => (
+          <li key={tag} className="flex items-center gap-2">
+            <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0
+              ${done ? "bg-green-500" : showErrors ? "bg-red-400" : "bg-blue-200"}`}>
+              {done ? (
+                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : (
+                <span className="w-1.5 h-1.5 rounded-full bg-white" />
+              )}
+            </span>
+            <span className={`text-xs ${done ? "text-green-700 font-semibold" : showErrors ? "text-red-600" : "text-blue-500"}`}>
+              {tag}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className={`text-xs mt-2 leading-relaxed ${outstanding === 0 ? "text-green-600" : showErrors ? "text-red-500" : "text-blue-400"}`}>
+        Upload each on its own, or tick them on a combined file - either way counts.
+      </p>
+    </div>
+  );
+}
+
 function RecordDetail({ record }: { record: VehicleRecord }) {
   const [expanded, setExpanded] = useState(false);
   const rows = recordDetailRows(record);
@@ -483,8 +868,14 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [otherVehiclesInvolved, setOtherVehiclesInvolved] = useState<boolean | null>(null);
   const [tppd, setTppd] = useState<boolean | null>(null);
   const [injuriesFatalities, setInjuriesFatalities] = useState<boolean | null>(null);
-  const [garageLocation, setGarageLocation] = useState("");
-  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("");
+  const [vehicleLocation, setVehicleLocation] = useState<VehicleLocation>("");
+  const [locationCounty, setLocationCounty] = useState("");
+  const [otherLocation, setOtherLocation] = useState("");
+  const [movement, setMovement] = useState("");
+  const [towingAgent, setTowingAgent] = useState("");
+  const [towingAgentOther, setTowingAgentOther] = useState("");
+  const [combinedDocs, setCombinedDocs] = useState<CombinedDoc[]>([]);
+  const [showErrors, setShowErrors] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [vehicle, setVehicle] = useState(EMPTY_VEHICLE);
   const [intermediary, setIntermediary] = useState(EMPTY_INTERMEDIARY);
@@ -522,13 +913,64 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   const handleDocChange = (key: DocKey, file: File | null) => setDocs((p) => ({ ...p, [key]: file }));
   const handleClaimTypeChange = (type: ClaimType) => { setClaimType(type); setClaimSubType(""); };
-  const availableDelivery = garageLocation ? DELIVERY_MODES[garageLocation] ?? [] : [];
-  const handleGarageChange = (loc: string) => { setGarageLocation(loc); setDeliveryMode(""); };
+
+  // Changing the location invalidates every answer that hung off the old one.
+  const handleVehicleLocationChange = (loc: string) => {
+    setVehicleLocation(loc as VehicleLocation);
+    setLocationCounty("");
+    setOtherLocation("");
+  };
+
+  const handleMovementChange = (m: string) => {
+    setMovement(m);
+    if (m !== "Towed") { setTowingAgent(""); setTowingAgentOther(""); }
+  };
+
+  const handleTowingAgentChange = (a: string) => {
+    setTowingAgent(a);
+    if (a !== "Other") setTowingAgentOther("");
+  };
+
+  const addCombinedDoc = () =>
+    setCombinedDocs((p) => [...p, { id: `cd-${Date.now()}-${p.length}`, file: null, tags: [] }]);
+
+  const setCombinedFile = (id: string, file: File | null) =>
+    setCombinedDocs((p) => p.map((c) => (c.id === id ? { ...c, file } : c)));
+
+  const toggleCombinedTag = (id: string, tag: DocTag) =>
+    setCombinedDocs((p) => p.map((c) => c.id === id
+      ? { ...c, tags: c.tags.includes(tag) ? c.tags.filter((t) => t !== tag) : [...c.tags, tag] }
+      : c));
+
+  const removeCombinedDoc = (id: string) => setCombinedDocs((p) => p.filter((c) => c.id !== id));
+
+  const countyNeeded = vehicleLocation === "Panel Garage" || vehicleLocation === "Non-Panel Garage";
+
+  /** Every unmet rule on the final step, phrased as cause + fix. */
+  const validationErrors: string[] = [];
+  if (!vehicleLocation) validationErrors.push("Choose where the vehicle is now.");
+  if (countyNeeded && !locationCounty) validationErrors.push("Select the county the garage is in.");
+  if (vehicleLocation === "Other" && !otherLocation) validationErrors.push("Choose whether the vehicle is at an office or a home.");
+  if (vehicleLocation && !movement) validationErrors.push("Tell us whether the vehicle was driven or towed.");
+  if (movement === "Towed" && !towingAgent) validationErrors.push("Select the towing agent.");
+  if (movement === "Towed" && towingAgent === "Other" && !towingAgentOther.trim()) validationErrors.push("Enter the towing provider's name.");
+  REQUIRED_TAGS.forEach((tag) => {
+    if (!isTagSatisfied(tag, docs, combinedDocs)) validationErrors.push(`Upload the ${tag}, or tick it on a combined file.`);
+  });
+  if (combinedDocs.some((c) => c.file && c.tags.length === 0)) validationErrors.push("Tick what each combined file contains.");
+
+  const handleSubmit = () => {
+    if (validationErrors.length > 0) { setShowErrors(true); return; }
+    setShowErrors(false);
+    setSubmitted(true);
+  };
 
   const handleReset = () => {
     setStep(0); setClaimType(""); setClaimSubType(""); setAccidentLocation("");
     setOtherVehiclesInvolved(null); setTppd(null); setInjuriesFatalities(null);
-    setGarageLocation(""); setDeliveryMode(""); setSubmitted(false);
+    setVehicleLocation(""); setLocationCounty(""); setOtherLocation("");
+    setMovement(""); setTowingAgent(""); setTowingAgentOther("");
+    setCombinedDocs([]); setShowErrors(false); setSubmitted(false);
     setDocs({ kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null });
   };
 
@@ -796,63 +1238,141 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                 </div>
               )}
 
-              {/* Step 4: Garage + Documents */}
+              {/* Step 4: Vehicle location + Documents */}
               {step === 3 && (
                 <div className="flex gap-5" style={{ animation: "slideIn 0.2s ease" }}>
-                  <SectionCard title="Garage & Delivery" subtitle="Approved garage and return preference">
+                  <SectionCard title="Vehicle Location" subtitle="Where the vehicle is and how it got there">
                     <div>
-                      <Label required>Garage Location</Label>
-                      <div className="relative">
-                        <Select value={garageLocation} onChange={(e) => handleGarageChange(e.target.value)} required>
-                          <option value="">Select garage...</option>
-                          {GARAGE_LOCATIONS.map((g) => <option key={g} value={g}>{g}</option>)}
-                        </Select>
-                        <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                          <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                          </svg>
-                        </div>
-                      </div>
+                      <Label required>Vehicle Location</Label>
+                      <SelectField
+                        value={vehicleLocation}
+                        onChange={handleVehicleLocationChange}
+                        placeholder="Select location..."
+                        options={VEHICLE_LOCATIONS}
+                        required
+                        invalid={showErrors && !vehicleLocation}
+                      />
+                      {vehicleLocation ? (
+                        <p className="text-xs text-blue-400 mt-1.5">
+                          {VEHICLE_LOCATION_HINTS[vehicleLocation as Exclude<VehicleLocation, "">]}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-blue-400 mt-1.5">We only ask what your answer needs.</p>
+                      )}
                     </div>
 
-                    {garageLocation && (
-                      <div style={{ animation: "slideIn 0.18s ease" }}>
-                        <Label required>Mode of Delivery</Label>
-                        <div className="relative">
-                          <Select value={deliveryMode} onChange={(e) => setDeliveryMode(e.target.value as DeliveryMode)} required>
-                            <option value="">Select delivery...</option>
-                            {availableDelivery.map((d) => <option key={d} value={d}>{d}</option>)}
-                          </Select>
-                          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                            <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
+                    {vehicleLocation === "Panel Garage" && (
+                      <RevealGroup>
+                        <div>
+                          <Label locked>Garage Name</Label>
+                          <Input locked value={PANEL_GARAGE_NAME} readOnly />
                         </div>
-                        <p className="text-xs text-blue-400 mt-1.5">{availableDelivery.length} mode{availableDelivery.length !== 1 ? "s" : ""} at this location</p>
+                        <div>
+                          <Label required>County Located</Label>
+                          <CountyPicker value={locationCounty} onChange={setLocationCounty}
+                            invalid={showErrors && !locationCounty} />
+                        </div>
+                      </RevealGroup>
+                    )}
+
+                    {vehicleLocation === "Non-Panel Garage" && (
+                      <RevealGroup>
+                        <div>
+                          <Label required>County Located</Label>
+                          <CountyPicker value={locationCounty} onChange={setLocationCounty}
+                            invalid={showErrors && !locationCounty} />
+                          <p className="text-xs text-blue-400 mt-1.5">
+                            Which county is the garage in? Start typing to filter.
+                          </p>
+                        </div>
+                      </RevealGroup>
+                    )}
+
+                    {vehicleLocation === "Other" && (
+                      <RevealGroup>
+                        <div>
+                          <Label required>Where exactly</Label>
+                          <ChoicePills value={otherLocation} onChange={setOtherLocation}
+                            options={OTHER_LOCATIONS} name="Other location" />
+                        </div>
+                      </RevealGroup>
+                    )}
+
+                    {vehicleLocation && (
+                      <div style={{ animation: "slideIn 0.18s ease" }}>
+                        <Label required>How did it get there</Label>
+                        <ChoicePills value={movement} onChange={handleMovementChange}
+                          options={["Driven", "Towed"]} name="Movement" />
                       </div>
                     )}
 
-                    <div className="mt-auto pt-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
-                      <p className="text-xs text-blue-400 leading-relaxed">
-                        Delivery options vary by garage. Home delivery and courier services are available in select locations.
-                      </p>
-                    </div>
+                    {movement === "Towed" && (
+                      <RevealGroup>
+                        <div>
+                          <Label required>Towing Agent</Label>
+                          <SelectField
+                            value={towingAgent}
+                            onChange={handleTowingAgentChange}
+                            placeholder="Select towing agent..."
+                            options={TOWING_AGENTS}
+                            required
+                            invalid={showErrors && !towingAgent}
+                          />
+                        </div>
+                        {towingAgent === "Other" && (
+                          <div style={{ animation: "slideIn 0.18s ease" }}>
+                            <Label required>Provider Name</Label>
+                            <Input
+                              placeholder="Who towed the vehicle?"
+                              value={towingAgentOther}
+                              onChange={(e) => setTowingAgentOther(e.target.value)}
+                              className={showErrors && !towingAgentOther.trim()
+                                ? "border-red-300 focus:border-red-500 focus:ring-red-100" : ""}
+                              required
+                            />
+                          </div>
+                        )}
+                      </RevealGroup>
+                    )}
                   </SectionCard>
 
                   <SectionCard title="Supporting Documents" subtitle="PDF, JPG or PNG · max 10MB each">
+                    <RequirementChecklist docs={docs} combined={combinedDocs} showErrors={showErrors} />
+
                     <div className="grid grid-cols-1 gap-2.5">
                       {(Object.keys(DOC_LABELS) as DocKey[]).map((key) => (
                         <FileDropZone key={key} label={DOC_LABELS[key]} docKey={key} file={docs[key]} onChange={handleDocChange} />
                       ))}
                     </div>
-                    <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-100">
-                      <svg className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                      </svg>
-                      <p className="text-xs text-blue-400 leading-relaxed">
-                        A police abstract is required for theft and accident claims. Missing documents may delay processing.
-                      </p>
+
+                    <div className="flex flex-col gap-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="h-px flex-1 bg-blue-100" />
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-300">
+                          Or one file for several
+                        </span>
+                        <div className="h-px flex-1 bg-blue-100" />
+                      </div>
+
+                      {combinedDocs.map((doc, i) => (
+                        <CombinedDocRow
+                          key={doc.id}
+                          doc={doc}
+                          index={i}
+                          onFile={setCombinedFile}
+                          onToggleTag={toggleCombinedTag}
+                          onRemove={removeCombinedDoc}
+                          showErrors={showErrors}
+                        />
+                      ))}
+
+                      <button type="button" onClick={addCombinedDoc}
+                        className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 text-xs font-semibold transition-colors">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                        Add combined document
+                      </button>
                     </div>
                   </SectionCard>
                 </div>
@@ -863,6 +1383,28 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
         {/* Footer nav */}
         {!submitted && (
+          <>
+            {showErrors && validationErrors.length > 0 && (
+              <div role="alert" aria-live="polite"
+                className="shrink-0 border-t border-red-200 bg-red-50 px-7 py-3"
+                style={{ animation: "slideIn 0.18s ease" }}>
+                <div className="flex items-start gap-2.5">
+                  <svg className="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                  </svg>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-red-600">
+                      {validationErrors.length} thing{validationErrors.length > 1 ? "s" : ""} left before you can submit
+                    </p>
+                    <ul className="mt-1 flex flex-col gap-0.5">
+                      {validationErrors.map((err) => (
+                        <li key={err} className="text-xs text-red-500 leading-relaxed">· {err}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            )}
           <div className="shrink-0 border-t border-blue-100 bg-white px-7 py-4 flex items-center justify-between">
             <div>
               {step > 0 && (
@@ -886,7 +1428,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                   </svg>
                 </button>
               ) : (
-                <button type="button" onClick={() => setSubmitted(true)}
+                <button type="button" onClick={handleSubmit}
                   className="flex items-center gap-1.5 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-all shadow-md shadow-blue-200 hover:-translate-y-0.5 active:translate-y-0">
                   Submit FNOL
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -896,6 +1438,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
               )}
             </div>
           </div>
+          </>
         )}
       </div>
     </div>
