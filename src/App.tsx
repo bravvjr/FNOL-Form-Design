@@ -102,19 +102,75 @@ function recordDetailRows(r: VehicleRecord): { label: string; value: string }[] 
 
 type ClaimType = "Normal" | "Partial Theft" | "Total Loss" | "Windscreen" | "";
 
-const ACCIDENT_LOCATIONS = [
-  "Nairobi",
-  "Mombasa",
-  "Kisumu",
-  "Nakuru",
-  "Eldoret",
-  "Thika",
-  "Nyeri",
-  "Meru",
-  "Kakamega",
-  "Machakos",
-  "Other",
-];
+/**
+ * Accident locations come from OpenStreetMap via Photon, which needs no API key
+ * (unlike Google Places) and is built for search-as-you-type. Results are biased
+ * to Kenya's bounding box and filtered to KE, and each carries its coordinates.
+ *
+ * The komoot instance is a free public service on fair-use terms - fine for this
+ * volume, but a production rollout should self-host Photon or move to a paid
+ * OSM provider. Nothing else changes: only PHOTON_ENDPOINT would.
+ */
+const PHOTON_ENDPOINT = "https://photon.komoot.io/api/";
+const KENYA_BBOX = "33.9,-4.7,41.9,5.5";
+
+type Place = {
+  id: string;
+  /** What the user picked, e.g. "Westlands". */
+  name: string;
+  /** Where it sits, e.g. "Nairobi, Kenya". */
+  context: string;
+  lat: number;
+  lon: number;
+  county: string;
+};
+
+type PhotonFeature = {
+  properties: Record<string, string | undefined> & { osm_id?: number | string };
+  geometry: { coordinates: [number, number] };
+};
+
+function toPlace(f: PhotonFeature): Place | null {
+  const p = f.properties ?? {};
+  const [lon, lat] = f.geometry?.coordinates ?? [];
+  if (typeof lat !== "number" || typeof lon !== "number") return null;
+  const name = p.name || p.street || p.city || p.state;
+  if (!name) return null;
+  // In Photon's Kenyan data `state` is the county (Nairobi, Mombasa) and `county`
+  // is the sub-county (Nairobi City, Mvita), so `state` wins. A result that IS a
+  // county boundary carries neither and names itself.
+  const county = p.state || (p.type === "state" ? p.name : "") || p.county || p.city || "";
+  const context = [p.district, p.city, p.state, p.country]
+    .filter((v, i, arr) => v && v !== name && arr.indexOf(v) === i)
+    .join(", ");
+  return {
+    id: `${p.osm_type ?? ""}${p.osm_id ?? ""}-${lat},${lon}`,
+    name,
+    context,
+    lat,
+    lon,
+    county,
+  };
+}
+
+async function searchPlaces(query: string, signal: AbortSignal): Promise<Place[]> {
+  const url = `${PHOTON_ENDPOINT}?q=${encodeURIComponent(query)}&limit=8&bbox=${KENYA_BBOX}`;
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`Location search failed (${res.status})`);
+  const data = (await res.json()) as { features?: PhotonFeature[] };
+  const seen = new Set<string>();
+  return (data.features ?? [])
+    .filter((f) => (f.properties?.countrycode ?? "KE") === "KE")
+    .map(toPlace)
+    .filter((p): p is Place => p !== null)
+    .filter((p) => {
+      // Photon repeats the same spot at different zoom levels; keep the first.
+      const key = `${p.name}|${p.context}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
 
 type VehicleLocation =
   | ""
@@ -583,6 +639,154 @@ function CountyPicker({ value, onChange, invalid }: {
   );
 }
 
+/**
+ * Accident location search over OpenStreetMap. Captures coordinates alongside the
+ * name, and falls back to whatever the user typed if the lookup is unreachable -
+ * a network problem should never block reporting a claim.
+ */
+function AccidentLocationPicker({ value, place, onChange, onSelect, invalid }: {
+  value: string;
+  place: Place | null;
+  onChange: (v: string) => void;
+  onSelect: (p: Place | null) => void;
+  invalid?: boolean;
+}) {
+  const [results, setResults] = useState<Place[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const q = value.trim();
+    if (place || q.length < 3) { setResults([]); setLoading(false); setFailed(false); return; }
+
+    const controller = new AbortController();
+    setLoading(true);
+    // Photon is a shared public instance; debounce so typing is not a flood.
+    const timer = setTimeout(() => {
+      searchPlaces(q, controller.signal)
+        .then((r) => { setResults(r); setFailed(false); setHighlight(0); })
+        .catch((err) => { if (err.name !== "AbortError") { setResults([]); setFailed(true); } })
+        .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 350);
+
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [value, place]);
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  const choose = (p: Place) => {
+    onSelect(p);
+    onChange(p.context ? `${p.name}, ${p.context}` : p.name);
+    setOpen(false);
+  };
+
+  const clear = () => { onSelect(null); onChange(""); setResults([]); setOpen(false); };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!open || results.length === 0) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlight((h) => (h + 1) % results.length); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlight((h) => (h - 1 + results.length) % results.length); }
+    else if (e.key === "Enter") { e.preventDefault(); choose(results[highlight]); }
+    else if (e.key === "Escape") { setOpen(false); }
+  };
+
+  const showList = open && !place && value.trim().length >= 3;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="relative">
+        <input
+          value={value}
+          placeholder="Search a place, road or landmark..."
+          autoComplete="off"
+          role="combobox"
+          aria-expanded={showList}
+          aria-autocomplete="list"
+          onFocus={() => setOpen(true)}
+          onChange={(e) => { if (place) onSelect(null); onChange(e.target.value); setOpen(true); }}
+          onKeyDown={onKeyDown}
+          className={`w-full bg-white border rounded-lg pl-9 py-2.5 text-sm transition-all duration-150
+            focus:outline-none focus:ring-2 ${place ? "pr-9" : "pr-3"}
+            ${invalid
+              ? "border-red-300 text-red-900 placeholder-red-300 focus:border-red-500 focus:ring-red-100"
+              : "border-blue-200 text-blue-900 placeholder-blue-300 focus:border-blue-500 focus:ring-blue-100"}`}
+        />
+        <svg className={`pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 ${invalid ? "text-red-300" : "text-blue-300"}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+        </svg>
+        {place && (
+          <button type="button" onClick={clear} aria-label="Clear location"
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-md flex items-center justify-center text-blue-300 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {place ? (
+        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          {place.county && (
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-600 bg-blue-100 rounded px-1.5 py-0.5">
+              {place.county}
+            </span>
+          )}
+          <span className="text-xs font-mono text-blue-400 tabular-nums">
+            {place.lat.toFixed(5)}, {place.lon.toFixed(5)}
+          </span>
+        </div>
+      ) : failed ? (
+        <p className="text-xs text-amber-600 mt-1.5">
+          Location search is unreachable. Your typed description is kept, but without coordinates.
+        </p>
+      ) : (
+        <p className={`text-xs mt-1.5 ${invalid ? "text-red-500" : "text-blue-400"}`}>
+          Type 3+ characters. Picking a result captures its coordinates.
+        </p>
+      )}
+
+      {showList && (
+        <ul role="listbox" aria-label="Matching places"
+          className="absolute z-30 left-0 right-0 mt-1 max-h-64 overflow-y-auto rounded-lg border border-blue-200 bg-white shadow-lg shadow-blue-900/10">
+          {loading ? (
+            <li className="px-3 py-3 text-xs text-blue-300 text-center">Searching OpenStreetMap...</li>
+          ) : failed ? (
+            <li className="px-3 py-3 text-xs text-amber-600 text-center">Search unavailable - type the location instead.</li>
+          ) : results.length === 0 ? (
+            <li className="px-3 py-3 text-xs text-blue-300 text-center">No place matches "{value.trim()}"</li>
+          ) : (
+            <>
+              {results.map((p, i) => (
+                <li key={p.id} role="option" aria-selected={i === highlight}
+                  onMouseEnter={() => setHighlight(i)}
+                  onMouseDown={(e) => { e.preventDefault(); choose(p); }}
+                  className={`px-3 py-2 cursor-pointer border-b border-blue-50 last:border-b-0 ${i === highlight ? "bg-blue-50" : "bg-white"}`}>
+                  <p className="text-sm font-semibold text-blue-900 truncate">{p.name}</p>
+                  {p.context && <p className="text-xs text-blue-400 truncate mt-0.5">{p.context}</p>}
+                </li>
+              ))}
+              <li className="px-3 py-1.5 text-[10px] text-blue-300 bg-blue-50/60 border-t border-blue-100 text-center">
+                Results © OpenStreetMap contributors
+              </li>
+            </>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /** Two-option choice. Pills rather than a select: both options stay visible. */
 function ChoicePills({ value, onChange, options, name }: {
   value: string; onChange: (v: string) => void; options: readonly string[]; name: string;
@@ -894,6 +1098,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [claimType, setClaimType] = useState<ClaimType>("");
   const [claimSubType, setClaimSubType] = useState("");
   const [accidentLocation, setAccidentLocation] = useState("");
+  const [accidentPlace, setAccidentPlace] = useState<Place | null>(null);
   const [otherVehiclesInvolved, setOtherVehiclesInvolved] = useState<boolean | null>(null);
   const [tppd, setTppd] = useState<boolean | null>(null);
   const [injuriesFatalities, setInjuriesFatalities] = useState<boolean | null>(null);
@@ -1013,7 +1218,8 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   };
 
   const handleReset = () => {
-    setStep(0); setFurthestStep(0); setClaimType(""); setClaimSubType(""); setAccidentLocation("");
+    setStep(0); setFurthestStep(0); setClaimType(""); setClaimSubType("");
+    setAccidentLocation(""); setAccidentPlace(null);
     setOtherVehiclesInvolved(null); setTppd(null); setInjuriesFatalities(null);
     setVehicleLocation(""); setPanelGarage(""); setLocationCounty(""); setOtherLocation("");
     setMovement(""); setTowingAgent(""); setTowingAgentOther("");
@@ -1206,17 +1412,12 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                       </div>
                       <div>
                         <Label required>Accident Location</Label>
-                        <div className="relative">
-                          <Select value={accidentLocation} onChange={(e) => setAccidentLocation(e.target.value)} required>
-                            <option value="">Select location...</option>
-                            {ACCIDENT_LOCATIONS.map((l) => <option key={l} value={l}>{l}</option>)}
-                          </Select>
-                          <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
-                            <svg className="w-3.5 h-3.5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </div>
+                        <AccidentLocationPicker
+                          value={accidentLocation}
+                          place={accidentPlace}
+                          onChange={setAccidentLocation}
+                          onSelect={setAccidentPlace}
+                        />
                       </div>
                     </div>
                   </SectionCard>
