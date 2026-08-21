@@ -588,8 +588,7 @@ function ChoicePills({ value, onChange, options, name }: {
   value: string; onChange: (v: string) => void; options: readonly string[]; name: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={name}
-      className={`grid gap-2 ${options.length >= 3 ? "grid-cols-3" : "grid-cols-2"}`}>
+    <div role="radiogroup" aria-label={name} className="grid grid-cols-2 gap-2">
       {options.map((o) => {
         const active = value === o;
         return (
@@ -1311,8 +1310,14 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                         {panelGarage && !countyAutoFilled && (
                           <div style={{ animation: "slideIn 0.18s ease" }}>
                             <Label required>County Located</Label>
-                            <ChoicePills value={locationCounty} onChange={setLocationCounty}
-                              options={panelBranches} name="Garage branch" />
+                            <SelectField
+                              value={locationCounty}
+                              onChange={setLocationCounty}
+                              placeholder="Select county..."
+                              options={panelBranches}
+                              required
+                              invalid={showErrors && !locationCounty}
+                            />
                             <p className={`text-xs mt-1.5 ${showErrors && !locationCounty ? "text-red-500" : "text-blue-400"}`}>
                               {panelGarage} has {panelBranches.length} branches. Which one has the vehicle?
                             </p>
