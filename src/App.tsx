@@ -827,29 +827,47 @@ function YesNoSelect({ label, hint, value, onChange }: {
   );
 }
 
-function StepperHeader({ step, total }: { step: number; total: number }) {
+function StepperHeader({ step, total, furthest, onSelect }: {
+  step: number;
+  total: number;
+  /** Highest step reached so far - anything past it has not been filled yet. */
+  furthest: number;
+  onSelect: (step: number) => void;
+}) {
   return (
     <div className="shrink-0 px-7 py-4 bg-white border-b border-blue-100">
-      <div className="flex items-center gap-0">
+      <nav aria-label="Form steps" className="flex items-center gap-0">
         {STEPS.map((s, i) => {
           const done = i < step;
           const active = i === step;
+          // Jumping ahead of what has been filled would skip required answers.
+          const reachable = i <= furthest;
           return (
             <div key={i} className="flex items-center flex-1 last:flex-none">
-              <div className="flex items-center gap-2.5 shrink-0">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200
+              <button
+                type="button"
+                onClick={() => reachable && onSelect(i)}
+                disabled={!reachable}
+                aria-current={active ? "step" : undefined}
+                aria-label={`Step ${i + 1}: ${s.label}${reachable ? "" : " (not yet available)"}`}
+                title={reachable ? `Go to ${s.label}` : "Finish the current step first"}
+                className={`flex items-center gap-2.5 shrink-0 rounded-lg -m-1 p-1 text-left transition-colors
+                  focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1
+                  ${reachable ? "cursor-pointer hover:bg-blue-50" : "cursor-not-allowed"}`}
+              >
+                <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-200
                   ${done ? "bg-blue-600 text-white" : active ? "bg-blue-600 text-white ring-4 ring-blue-100" : "bg-blue-100 text-blue-400"}`}>
                   {done ? (
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   ) : i + 1}
-                </div>
-                <div className="hidden sm:block">
-                  <p className={`text-xs font-bold leading-tight ${active ? "text-blue-700" : done ? "text-blue-500" : "text-blue-300"}`}>{s.label}</p>
-                  <p className={`text-xs leading-tight ${active ? "text-blue-400" : "text-blue-200"}`}>{s.desc}</p>
-                </div>
-              </div>
+                </span>
+                <span className="hidden sm:block">
+                  <span className={`block text-xs font-bold leading-tight ${active ? "text-blue-700" : done ? "text-blue-500" : "text-blue-300"}`}>{s.label}</span>
+                  <span className={`block text-xs leading-tight ${active ? "text-blue-400" : "text-blue-200"}`}>{s.desc}</span>
+                </span>
+              </button>
               {i < total - 1 && (
                 <div className="flex-1 mx-3 h-px bg-blue-100 relative overflow-hidden">
                   <div className={`absolute inset-y-0 left-0 bg-blue-400 transition-all duration-500 ${done ? "w-full" : "w-0"}`} />
@@ -858,13 +876,20 @@ function StepperHeader({ step, total }: { step: number; total: number }) {
             </div>
           );
         })}
-      </div>
+      </nav>
     </div>
   );
 }
 
 function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [step, setStep] = useState(0);
+  const [furthestStep, setFurthestStep] = useState(0);
+
+  const goToStep = (next: number) => {
+    const clamped = Math.max(0, Math.min(next, STEPS.length - 1));
+    setStep(clamped);
+    setFurthestStep((f) => Math.max(f, clamped));
+  };
   const [partyType, setPartyType] = useState<"intermediary" | "insured">("intermediary");
   const [claimType, setClaimType] = useState<ClaimType>("");
   const [claimSubType, setClaimSubType] = useState("");
@@ -988,7 +1013,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   };
 
   const handleReset = () => {
-    setStep(0); setClaimType(""); setClaimSubType(""); setAccidentLocation("");
+    setStep(0); setFurthestStep(0); setClaimType(""); setClaimSubType(""); setAccidentLocation("");
     setOtherVehiclesInvolved(null); setTppd(null); setInjuriesFatalities(null);
     setVehicleLocation(""); setPanelGarage(""); setLocationCounty(""); setOtherLocation("");
     setMovement(""); setTowingAgent(""); setTowingAgentOther("");
@@ -1047,7 +1072,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
         <div className="shrink-0 h-0.5 bg-gradient-to-r from-blue-400 via-blue-300 to-blue-500" />
 
         {/* Stepper */}
-        <StepperHeader step={step} total={STEPS.length} />
+        <StepperHeader step={step} total={STEPS.length} furthest={furthestStep} onSelect={goToStep} />
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
@@ -1446,32 +1471,10 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
         {/* Footer nav */}
         {!submitted && (
-          <>
-            {showErrors && validationErrors.length > 0 && (
-              <div role="alert" aria-live="polite"
-                className="shrink-0 border-t border-red-200 bg-red-50 px-7 py-3"
-                style={{ animation: "slideIn 0.18s ease" }}>
-                <div className="flex items-start gap-2.5">
-                  <svg className="w-4 h-4 text-red-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                  </svg>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-red-600">
-                      {validationErrors.length} thing{validationErrors.length > 1 ? "s" : ""} left before you can submit
-                    </p>
-                    <ul className="mt-1 flex flex-col gap-0.5">
-                      {validationErrors.map((err) => (
-                        <li key={err} className="text-xs text-red-500 leading-relaxed">· {err}</li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
           <div className="shrink-0 border-t border-blue-100 bg-white px-7 py-4 flex items-center justify-between">
             <div>
               {step > 0 && (
-                <button type="button" onClick={() => setStep((s) => s - 1)}
+                <button type="button" onClick={() => goToStep(step - 1)}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors">
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -1483,7 +1486,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
             <div className="flex items-center gap-3">
               <p className="text-xs text-blue-300"><span className="text-blue-400">*</span> Required</p>
               {step < STEPS.length - 1 ? (
-                <button type="button" onClick={() => setStep((s) => s + 1)}
+                <button type="button" onClick={() => goToStep(step + 1)}
                   className="flex items-center gap-1.5 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-all shadow-md shadow-blue-200 hover:-translate-y-0.5 active:translate-y-0">
                   Continue
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1501,7 +1504,6 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
               )}
             </div>
           </div>
-          </>
         )}
       </div>
     </div>
