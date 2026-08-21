@@ -191,6 +191,13 @@ const TAG_TO_DOC_KEY: Partial<Record<DocTag, DocKey>> = {
   "Claim Form": "claimForm",
 };
 
+/** Reverse of the above, so an upload slot knows which requirement it answers. */
+const DOC_KEY_TO_TAG: Partial<Record<DocKey, DocTag>> = {
+  policeAbstract: "Police Abstract",
+  drivingLicence: "Driving Licence",
+  claimForm: "Claim Form",
+};
+
 /** A requirement is met by its own upload slot or by any combined file tagged with it. */
 function isTagSatisfied(tag: DocTag, docs: Record<DocKey, File | null>, combined: CombinedDoc[]) {
   const key = TAG_TO_DOC_KEY[tag];
@@ -205,8 +212,13 @@ const STEPS = [
   { label: "Location & Docs", desc: "Where it is and uploads" },
 ];
 
-function FileDropZone({ label, docKey, file, onChange }: {
-  label: string; docKey: DocKey; file: File | null; onChange: (key: DocKey, file: File | null) => void;
+function FileDropZone({ label, docKey, file, onChange, required, invalid }: {
+  label: string;
+  docKey: DocKey;
+  file: File | null;
+  onChange: (key: DocKey, file: File | null) => void;
+  required?: boolean;
+  invalid?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -221,7 +233,13 @@ function FileDropZone({ label, docKey, file, onChange }: {
   return (
     <div
       className={`relative rounded-lg border-2 border-dashed transition-all duration-200 cursor-pointer group
-        ${dragging ? "border-blue-400 bg-blue-50" : file ? "border-green-400 bg-green-50" : "border-blue-200 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50"}`}
+        ${dragging
+          ? "border-blue-400 bg-blue-50"
+          : file
+            ? "border-green-400 bg-green-50"
+            : invalid
+              ? "border-red-300 bg-red-50/50 hover:border-red-400"
+              : "border-blue-200 hover:border-blue-400 bg-blue-50/40 hover:bg-blue-50"}`}
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
       onDragLeave={() => setDragging(false)}
@@ -243,8 +261,22 @@ function FileDropZone({ label, docKey, file, onChange }: {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className={`text-xs font-semibold leading-tight ${file ? "text-green-700" : "text-blue-900"}`}>{label}</p>
-          <p className="text-xs text-blue-400 truncate mt-0.5">{file ? file.name : "Click or drag to upload"}</p>
+          <p className={`text-xs font-semibold leading-tight flex items-center gap-1.5
+            ${file ? "text-green-700" : invalid ? "text-red-600" : "text-blue-900"}`}>
+            <span>
+              {label}
+              {required && <span className={invalid ? "text-red-500 ml-0.5" : "text-blue-400 ml-0.5"}>*</span>}
+            </span>
+            {required && !file && (
+              <span className={`normal-case tracking-normal text-[10px] font-semibold uppercase rounded px-1.5 py-0.5
+                ${invalid ? "text-red-600 bg-red-100" : "text-blue-500 bg-blue-100"}`}>
+                Required
+              </span>
+            )}
+          </p>
+          <p className={`text-xs truncate mt-0.5 ${invalid && !file ? "text-red-400" : "text-blue-400"}`}>
+            {file ? file.name : "Click or drag to upload"}
+          </p>
         </div>
         {file && (
           <button className="shrink-0 text-blue-300 hover:text-red-400 transition-colors p-1"
@@ -695,62 +727,23 @@ function CombinedDocRow({ doc, index, onFile, onToggleTag, onRemove, showErrors 
         </button>
       )}
 
-      <div>
-        <label className={`block text-xs font-semibold uppercase tracking-wide mb-1.5 ${untagged ? "text-red-500" : "text-blue-700"}`}>
-          Contains{doc.file && <span className={untagged ? "text-red-400 ml-0.5" : "text-blue-400 ml-0.5"}>*</span>}
-        </label>
-        <TagMultiSelect
-          selected={doc.tags}
-          invalid={untagged}
-          onToggle={(t) => onToggleTag(doc.id, t)}
-        />
-        {untagged && (
-          <p role="alert" className="text-xs text-red-500 mt-1.5">
-            Tick what this file contains so we can match it against the required documents.
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/**
- * Turns the two hard requirements into visible progress rather than a wall the
- * user only meets at submit time.
- */
-function RequirementChecklist({ docs, combined, showErrors }: {
-  docs: Record<DocKey, File | null>; combined: CombinedDoc[]; showErrors: boolean;
-}) {
-  const rows = REQUIRED_TAGS.map((tag) => ({ tag, done: isTagSatisfied(tag, docs, combined) }));
-  const outstanding = rows.filter((r) => !r.done).length;
-
-  return (
-    <div className={`rounded-lg border p-3 ${outstanding === 0 ? "border-green-200 bg-green-50" : showErrors ? "border-red-200 bg-red-50" : "border-blue-100 bg-blue-50"}`}>
-      <p className={`text-xs font-bold mb-2 ${outstanding === 0 ? "text-green-700" : showErrors ? "text-red-600" : "text-blue-900"}`}>
-        {outstanding === 0 ? "Required documents received" : `${outstanding} required document${outstanding > 1 ? "s" : ""} still needed`}
-      </p>
-      <ul className="flex flex-col gap-1.5">
-        {rows.map(({ tag, done }) => (
-          <li key={tag} className="flex items-center gap-2">
-            <span className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0
-              ${done ? "bg-green-500" : showErrors ? "bg-red-400" : "bg-blue-200"}`}>
-              {done ? (
-                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className="w-1.5 h-1.5 rounded-full bg-white" />
-              )}
-            </span>
-            <span className={`text-xs ${done ? "text-green-700 font-semibold" : showErrors ? "text-red-600" : "text-blue-500"}`}>
-              {tag}
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className={`text-xs mt-2 leading-relaxed ${outstanding === 0 ? "text-green-600" : showErrors ? "text-red-500" : "text-blue-400"}`}>
-        Upload each on its own, or tick them on a combined file - either way counts.
-      </p>
+      {doc.file && (
+        <div style={{ animation: "slideIn 0.18s ease" }}>
+          <label className={`block text-xs font-semibold uppercase tracking-wide mb-1.5 ${untagged ? "text-red-500" : "text-blue-700"}`}>
+            Contains<span className={untagged ? "text-red-400 ml-0.5" : "text-blue-400 ml-0.5"}>*</span>
+          </label>
+          <TagMultiSelect
+            selected={doc.tags}
+            invalid={untagged}
+            onToggle={(t) => onToggleTag(doc.id, t)}
+          />
+          {untagged && (
+            <p role="alert" className="text-xs text-red-500 mt-1.5">
+              Tick what this file contains so we can match it against the required documents.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1337,12 +1330,24 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                   </SectionCard>
 
                   <SectionCard title="Supporting Documents" subtitle="PDF, JPG or PNG · max 10MB each">
-                    <RequirementChecklist docs={docs} combined={combinedDocs} showErrors={showErrors} />
-
                     <div className="grid grid-cols-1 gap-2.5">
-                      {(Object.keys(DOC_LABELS) as DocKey[]).map((key) => (
-                        <FileDropZone key={key} label={DOC_LABELS[key]} docKey={key} file={docs[key]} onChange={handleDocChange} />
-                      ))}
+                      {(Object.keys(DOC_LABELS) as DocKey[]).map((key) => {
+                        const tag = DOC_KEY_TO_TAG[key];
+                        const isRequired = tag !== undefined && REQUIRED_TAGS.includes(tag);
+                        // A combined file tagged with this document already covers it.
+                        const covered = isRequired && tag !== undefined && isTagSatisfied(tag, docs, combinedDocs);
+                        return (
+                          <FileDropZone
+                            key={key}
+                            label={DOC_LABELS[key]}
+                            docKey={key}
+                            file={docs[key]}
+                            onChange={handleDocChange}
+                            required={isRequired && !covered}
+                            invalid={showErrors && isRequired && !covered}
+                          />
+                        );
+                      })}
                     </div>
 
                     <div className="flex flex-col gap-2.5">
