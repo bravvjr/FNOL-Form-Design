@@ -80,6 +80,7 @@ function searchVehicles(query: string): VehicleRecord[] {
 const EMPTY_VEHICLE = { registrationNumber: "", make: "", model: "", yearOfManufacture: "" };
 const EMPTY_INTERMEDIARY = { name: "", code: "", phone: "", email: "" };
 const EMPTY_INSURED = { name: "", idNumber: "" };
+const EMPTY_COMBINED_DOC: CombinedDoc = { id: "combined", file: null, tags: [] };
 
 const KES = new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 });
 const titleCase = (v: string) => v.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -880,13 +881,12 @@ function TagMultiSelect({ selected, onToggle, invalid }: {
   );
 }
 
-/** One combined file: the upload itself plus what the user says is inside it. */
-function CombinedDocRow({ doc, index, onFile, onToggleTag, onRemove, showErrors }: {
+/** The one combined file: the upload itself plus what the user says is inside it. */
+function CombinedDocRow({ doc, onFile, onToggleTag, onClear, showErrors }: {
   doc: CombinedDoc;
-  index: number;
-  onFile: (id: string, file: File | null) => void;
-  onToggleTag: (id: string, tag: DocTag) => void;
-  onRemove: (id: string) => void;
+  onFile: (file: File | null) => void;
+  onToggleTag: (tag: DocTag) => void;
+  onClear: () => void;
   showErrors: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -895,18 +895,19 @@ function CombinedDocRow({ doc, index, onFile, onToggleTag, onRemove, showErrors 
   return (
     <div className="rounded-lg border border-blue-100 bg-white p-3 flex flex-col gap-2.5">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-bold text-blue-900">Combined Document {index + 1}</p>
-        <button type="button" onClick={() => onRemove(doc.id)}
-          aria-label={`Remove combined document ${index + 1}`}
-          className="w-7 h-7 rounded-md flex items-center justify-center text-blue-300 hover:text-red-500 hover:bg-red-50 transition-colors">
-          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <p className="text-xs font-bold text-blue-900">Combined Document</p>
+        {doc.file && (
+          <button type="button" onClick={onClear} aria-label="Clear combined document"
+            className="w-7 h-7 rounded-md flex items-center justify-center text-blue-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       <input ref={inputRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png"
-        onChange={(e) => onFile(doc.id, e.target.files?.[0] ?? null)} />
+        onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
 
       {doc.file ? (
         <div className="flex items-center gap-2.5 rounded-lg bg-blue-50/60 border border-blue-100 px-3 py-2">
@@ -950,7 +951,7 @@ function CombinedDocRow({ doc, index, onFile, onToggleTag, onRemove, showErrors 
           <TagMultiSelect
             selected={doc.tags}
             invalid={untagged}
-            onToggle={(t) => onToggleTag(doc.id, t)}
+            onToggle={onToggleTag}
           />
           {untagged && (
             <p role="alert" className="text-xs text-red-500 mt-1.5">
@@ -1109,7 +1110,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [movement, setMovement] = useState("");
   const [towingAgent, setTowingAgent] = useState("");
   const [towingAgentOther, setTowingAgentOther] = useState("");
-  const [combinedDocs, setCombinedDocs] = useState<CombinedDoc[]>([]);
+  const [combinedDoc, setCombinedDoc] = useState<CombinedDoc>(EMPTY_COMBINED_DOC);
   const [showErrors, setShowErrors] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [vehicle, setVehicle] = useState(EMPTY_VEHICLE);
@@ -1174,18 +1175,15 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     if (a !== "Other") setTowingAgentOther("");
   };
 
-  const addCombinedDoc = () =>
-    setCombinedDocs((p) => [...p, { id: `cd-${Date.now()}-${p.length}`, file: null, tags: [] }]);
+  const setCombinedFile = (file: File | null) => setCombinedDoc((p) => ({ ...p, file }));
 
-  const setCombinedFile = (id: string, file: File | null) =>
-    setCombinedDocs((p) => p.map((c) => (c.id === id ? { ...c, file } : c)));
+  const toggleCombinedTag = (tag: DocTag) =>
+    setCombinedDoc((p) => ({
+      ...p,
+      tags: p.tags.includes(tag) ? p.tags.filter((t) => t !== tag) : [...p.tags, tag],
+    }));
 
-  const toggleCombinedTag = (id: string, tag: DocTag) =>
-    setCombinedDocs((p) => p.map((c) => c.id === id
-      ? { ...c, tags: c.tags.includes(tag) ? c.tags.filter((t) => t !== tag) : [...c.tags, tag] }
-      : c));
-
-  const removeCombinedDoc = (id: string) => setCombinedDocs((p) => p.filter((c) => c.id !== id));
+  const clearCombinedDoc = () => setCombinedDoc(EMPTY_COMBINED_DOC);
 
   const panelBranches = panelGarage ? PANEL_GARAGES[panelGarage] ?? [] : [];
   const countyAutoFilled = vehicleLocation === "Panel Garage" && panelBranches.length === 1;
@@ -1207,9 +1205,9 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (movement === "Towed" && !towingAgent) validationErrors.push("Select the towing agent.");
   if (movement === "Towed" && towingAgent === "Other" && !towingAgentOther.trim()) validationErrors.push("Enter the towing provider's name.");
   REQUIRED_TAGS.forEach((tag) => {
-    if (!isTagSatisfied(tag, docs, combinedDocs)) validationErrors.push(`Upload the ${tag}, or tick it on a combined file.`);
+    if (!isTagSatisfied(tag, docs, [combinedDoc])) validationErrors.push(`Upload the ${tag}, or tick it on a combined file.`);
   });
-  if (combinedDocs.some((c) => c.file && c.tags.length === 0)) validationErrors.push("Tick what each combined file contains.");
+  if (combinedDoc.file && combinedDoc.tags.length === 0) validationErrors.push("Tick what the combined file contains.");
 
   const handleSubmit = () => {
     if (validationErrors.length > 0) { setShowErrors(true); return; }
@@ -1223,7 +1221,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     setOtherVehiclesInvolved(null); setTppd(null); setInjuriesFatalities(null);
     setVehicleLocation(""); setPanelGarage(""); setLocationCounty(""); setOtherLocation("");
     setMovement(""); setTowingAgent(""); setTowingAgentOther("");
-    setCombinedDocs([]); setShowErrors(false); setSubmitted(false);
+    setCombinedDoc(EMPTY_COMBINED_DOC); setShowErrors(false); setSubmitted(false);
     setDocs({ kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null });
   };
 
@@ -1408,7 +1406,12 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                     <div className="grid grid-cols-1 gap-3">
                       <div>
                         <Label required>Date of Loss</Label>
-                        <Input type="date" required max={new Date().toISOString().split("T")[0]} />
+                        <Input
+                          type="date"
+                          required
+                          max={new Date().toISOString().split("T")[0]}
+                          onClick={(e) => e.currentTarget.showPicker?.()}
+                        />
                       </div>
                       <div>
                         <Label required>Accident Location</Label>
@@ -1619,7 +1622,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                         const tag = DOC_KEY_TO_TAG[key];
                         const isRequired = tag !== undefined && REQUIRED_TAGS.includes(tag);
                         // A combined file tagged with this document already covers it.
-                        const covered = isRequired && tag !== undefined && isTagSatisfied(tag, docs, combinedDocs);
+                        const covered = isRequired && tag !== undefined && isTagSatisfied(tag, docs, [combinedDoc]);
                         return (
                           <FileDropZone
                             key={key}
@@ -1643,25 +1646,13 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                         <div className="h-px flex-1 bg-blue-100" />
                       </div>
 
-                      {combinedDocs.map((doc, i) => (
-                        <CombinedDocRow
-                          key={doc.id}
-                          doc={doc}
-                          index={i}
-                          onFile={setCombinedFile}
-                          onToggleTag={toggleCombinedTag}
-                          onRemove={removeCombinedDoc}
-                          showErrors={showErrors}
-                        />
-                      ))}
-
-                      <button type="button" onClick={addCombinedDoc}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-dashed border-blue-300 text-blue-600 hover:bg-blue-50 hover:border-blue-400 text-xs font-semibold transition-colors">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                        </svg>
-                        Add combined document
-                      </button>
+                      <CombinedDocRow
+                        doc={combinedDoc}
+                        onFile={setCombinedFile}
+                        onToggleTag={toggleCombinedTag}
+                        onClear={clearCombinedDoc}
+                        showErrors={showErrors}
+                      />
                     </div>
                   </SectionCard>
                 </div>
