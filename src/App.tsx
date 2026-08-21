@@ -138,8 +138,19 @@ const VEHICLE_LOCATION_HINTS: Record<Exclude<VehicleLocation, "">, string> = {
   Other: "Still at your office or home",
 };
 
-/** Placeholder until the panel-garage directory is wired to the API. */
-const PANEL_GARAGE_NAME = "Test garage";
+/**
+ * Approved panel garages and the counties they have branches in. A single-branch
+ * garage fixes the county outright; a multi-branch one still needs the user to
+ * say which branch holds the vehicle. Stands in for the garage directory API.
+ */
+const PANEL_GARAGES: Record<string, string[]> = {
+  "Flip Test garage": ["Nairobi", "Kisumu", "Nakuru"],
+  Titanic: ["Mombasa"],
+  "Stantech Motors Garage": ["Nairobi"],
+  "Dubai Ndogo": ["Nairobi", "Eldoret"],
+};
+
+const PANEL_GARAGE_NAMES = Object.keys(PANEL_GARAGES);
 
 const OTHER_LOCATIONS = ["Office", "Home"];
 
@@ -577,7 +588,8 @@ function ChoicePills({ value, onChange, options, name }: {
   value: string; onChange: (v: string) => void; options: readonly string[]; name: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={name} className="grid grid-cols-2 gap-2">
+    <div role="radiogroup" aria-label={name}
+      className={`grid gap-2 ${options.length >= 3 ? "grid-cols-3" : "grid-cols-2"}`}>
       {options.map((o) => {
         const active = value === o;
         return (
@@ -862,6 +874,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [tppd, setTppd] = useState<boolean | null>(null);
   const [injuriesFatalities, setInjuriesFatalities] = useState<boolean | null>(null);
   const [vehicleLocation, setVehicleLocation] = useState<VehicleLocation>("");
+  const [panelGarage, setPanelGarage] = useState("");
   const [locationCounty, setLocationCounty] = useState("");
   const [otherLocation, setOtherLocation] = useState("");
   const [movement, setMovement] = useState("");
@@ -910,8 +923,16 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   // Changing the location invalidates every answer that hung off the old one.
   const handleVehicleLocationChange = (loc: string) => {
     setVehicleLocation(loc as VehicleLocation);
+    setPanelGarage("");
     setLocationCounty("");
     setOtherLocation("");
+  };
+
+  /** One branch means the county is already known, so fill it rather than ask. */
+  const handlePanelGarageChange = (name: string) => {
+    setPanelGarage(name);
+    const branches = PANEL_GARAGES[name] ?? [];
+    setLocationCounty(branches.length === 1 ? branches[0] : "");
   };
 
   const handleMovementChange = (m: string) => {
@@ -937,12 +958,21 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   const removeCombinedDoc = (id: string) => setCombinedDocs((p) => p.filter((c) => c.id !== id));
 
+  const panelBranches = panelGarage ? PANEL_GARAGES[panelGarage] ?? [] : [];
+  const countyAutoFilled = vehicleLocation === "Panel Garage" && panelBranches.length === 1;
   const countyNeeded = vehicleLocation === "Panel Garage" || vehicleLocation === "Non-Panel Garage";
 
   /** Every unmet rule on the final step, phrased as cause + fix. */
   const validationErrors: string[] = [];
   if (!vehicleLocation) validationErrors.push("Choose where the vehicle is now.");
-  if (countyNeeded && !locationCounty) validationErrors.push("Select the county the garage is in.");
+  if (vehicleLocation === "Panel Garage" && !panelGarage) validationErrors.push("Choose which panel garage has the vehicle.");
+  if (countyNeeded && !locationCounty) {
+    validationErrors.push(
+      panelBranches.length > 1
+        ? `Choose which ${panelGarage} branch has the vehicle.`
+        : "Select the county the garage is in.",
+    );
+  }
   if (vehicleLocation === "Other" && !otherLocation) validationErrors.push("Choose whether the vehicle is at an office or a home.");
   if (vehicleLocation && !movement) validationErrors.push("Tell us whether the vehicle was driven or towed.");
   if (movement === "Towed" && !towingAgent) validationErrors.push("Select the towing agent.");
@@ -961,7 +991,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const handleReset = () => {
     setStep(0); setClaimType(""); setClaimSubType(""); setAccidentLocation("");
     setOtherVehiclesInvolved(null); setTppd(null); setInjuriesFatalities(null);
-    setVehicleLocation(""); setLocationCounty(""); setOtherLocation("");
+    setVehicleLocation(""); setPanelGarage(""); setLocationCounty(""); setOtherLocation("");
     setMovement(""); setTowingAgent(""); setTowingAgentOther("");
     setCombinedDocs([]); setShowErrors(false); setSubmitted(false);
     setDocs({ kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null });
@@ -1257,14 +1287,37 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                     {vehicleLocation === "Panel Garage" && (
                       <RevealGroup>
                         <div>
-                          <Label locked>Garage Name</Label>
-                          <Input locked value={PANEL_GARAGE_NAME} readOnly />
+                          <Label required>Garage Name</Label>
+                          <SelectField
+                            value={panelGarage}
+                            onChange={handlePanelGarageChange}
+                            placeholder="Select panel garage..."
+                            options={PANEL_GARAGE_NAMES}
+                            required
+                            invalid={showErrors && !panelGarage}
+                          />
                         </div>
-                        <div>
-                          <Label required>County Located</Label>
-                          <CountyPicker value={locationCounty} onChange={setLocationCounty}
-                            invalid={showErrors && !locationCounty} />
-                        </div>
+
+                        {panelGarage && countyAutoFilled && (
+                          <div style={{ animation: "slideIn 0.18s ease" }}>
+                            <Label locked>County Located</Label>
+                            <Input locked value={locationCounty} readOnly />
+                            <p className="text-xs text-slate-400 mt-1.5">
+                              {panelGarage} only operates in {locationCounty}.
+                            </p>
+                          </div>
+                        )}
+
+                        {panelGarage && !countyAutoFilled && (
+                          <div style={{ animation: "slideIn 0.18s ease" }}>
+                            <Label required>County Located</Label>
+                            <ChoicePills value={locationCounty} onChange={setLocationCounty}
+                              options={panelBranches} name="Garage branch" />
+                            <p className={`text-xs mt-1.5 ${showErrors && !locationCounty ? "text-red-500" : "text-blue-400"}`}>
+                              {panelGarage} has {panelBranches.length} branches. Which one has the vehicle?
+                            </p>
+                          </div>
+                        )}
                       </RevealGroup>
                     )}
 
