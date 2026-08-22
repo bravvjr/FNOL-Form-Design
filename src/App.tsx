@@ -814,19 +814,33 @@ function ChoicePills({ value, onChange, options, name }: {
 }
 
 /** A Yes/No question as the same radio-pill control used for Driven/Towed and Office/Home. */
-function YesNoPills({ label, hint, value, onChange }: {
+/** A quick yes/no tap: plain radio dot + text, label and choice on one row - no button box. */
+function YesNoField({ label, hint, value, onChange }: {
   label: string; hint: string; value: boolean | null; onChange: (v: boolean) => void;
 }) {
   return (
-    <div>
-      <Label required>{label}</Label>
-      <ChoicePills
-        value={value === null ? "" : value ? "Yes" : "No"}
-        onChange={(v) => onChange(v === "Yes")}
-        options={["Yes", "No"]}
-        name={label}
-      />
-      <p className="text-xs text-blue-400 mt-1.5 leading-relaxed">{hint}</p>
+    <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="min-w-0">
+        <Label required>{label}</Label>
+        <p className="text-xs text-blue-400 leading-relaxed">{hint}</p>
+      </div>
+      <div role="radiogroup" aria-label={label} className="flex items-center gap-4 shrink-0">
+        {(["Yes", "No"] as const).map((opt) => {
+          const active = value === (opt === "Yes");
+          return (
+            <button key={opt} type="button" role="radio" aria-checked={active}
+              onClick={() => onChange(opt === "Yes")}
+              className={`flex items-center gap-1.5 px-1 py-2 text-sm font-semibold transition-colors
+                ${active ? "text-blue-700" : "text-blue-400 hover:text-blue-600"}`}>
+              <span className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors
+                ${active ? "border-blue-600" : "border-blue-300"}`}>
+                {active && <span className="w-2 h-2 rounded-full bg-blue-600" />}
+              </span>
+              {opt}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1456,19 +1470,19 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
                   <SectionCard title="Incident Circumstances" subtitle="Other parties and impact">
                     <div className="grid grid-cols-1 gap-3">
-                      <YesNoPills
+                      <YesNoField
                         label="Other Vehicles Involved"
                         hint="Were any other vehicles involved in the accident?"
                         value={otherVehiclesInvolved}
                         onChange={setOtherVehiclesInvolved}
                       />
-                      <YesNoPills
+                      <YesNoField
                         label="Third Party Property Damage (TPPD)"
                         hint="Was a third party injured, or was third-party property damaged, as a result of the accident?"
                         value={tppd}
                         onChange={setTppd}
                       />
-                      <YesNoPills
+                      <YesNoField
                         label="Injuries / Fatalities"
                         hint="Were there any injuries or fatalities to the driver or passengers of the insured vehicle?"
                         value={injuriesFatalities}
