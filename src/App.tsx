@@ -328,7 +328,7 @@ function FileDropZone({ label, docKey, file, onChange, required, invalid }: {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className={`text-xs font-semibold leading-tight flex items-center gap-1.5
+          <p className={`text-xs font-semibold leading-tight flex items-center flex-wrap gap-1.5
             ${file ? "text-green-700" : invalid ? "text-red-600" : "text-blue-900"}`}>
             <span>
               {label}
@@ -360,7 +360,7 @@ function FileDropZone({ label, docKey, file, onChange, required, invalid }: {
 
 function SectionCard({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   return (
-    <div className="flex-1 min-w-0 rounded-xl border border-blue-100 bg-blue-50/40 p-5 flex flex-col gap-4">
+    <div className="flex-1 min-w-0 rounded-xl border border-blue-100 bg-blue-50/40 p-4 sm:p-5 flex flex-col gap-4">
       <div>
         <h3 className="text-sm font-bold text-blue-900">{title}</h3>
         <p className="text-xs text-blue-400 mt-0.5">{subtitle}</p>
@@ -1047,7 +1047,7 @@ function StepperHeader({ step, total, furthest, onSelect }: {
   onSelect: (step: number) => void;
 }) {
   return (
-    <div className="shrink-0 px-7 py-4 bg-white border-b border-blue-100">
+    <div className="shrink-0 px-4 sm:px-7 py-4 bg-white border-b border-blue-100">
       <nav aria-label="Form steps" className="flex items-center gap-0">
         {STEPS.map((s, i) => {
           const done = i < step;
@@ -1252,7 +1252,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
         }}
       >
         {/* Dialog header */}
-        <div className="shrink-0 bg-blue-700 px-7 py-4 flex items-center justify-between">
+        <div className="shrink-0 bg-blue-700 px-4 sm:px-7 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -1313,11 +1313,11 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
               </div>
             </div>
           ) : (
-            <div className="p-7">
+            <div className="p-4 sm:p-7">
 
               {/* Step 1: Vehicle + Party */}
               {step === 0 && (
-                <div className="flex gap-5" style={{ animation: "slideIn 0.2s ease" }}>
+                <div className="flex flex-col md:flex-row gap-5" style={{ animation: "slideIn 0.2s ease" }}>
                   <SectionCard title="Vehicle Details" subtitle="Registration and car identification">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="col-span-2">
@@ -1352,10 +1352,10 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                   </SectionCard>
 
                   <SectionCard title="Party Details" subtitle="Intermediary or insured contact">
-                    <div className="flex gap-1.5 p-1 bg-blue-100 rounded-lg w-fit">
+                    <div className="flex gap-1.5 p-1 bg-blue-100 rounded-lg">
                       {(["intermediary", "insured"] as const).map((t) => (
                         <button key={t} type="button" onClick={() => setPartyType(t)}
-                          className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-150
+                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-150
                             ${partyType === t ? "bg-blue-600 text-white shadow-sm" : "text-blue-500 hover:text-blue-700"}`}>
                           {t === "intermediary" ? "Intermediary" : "Direct Insured"}
                         </button>
@@ -1409,7 +1409,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
               {/* Step 2: Date of Loss, Nature of Claim + Circumstances */}
               {step === 1 && (
                 <div className="flex flex-col gap-5" style={{ animation: "slideIn 0.2s ease" }}>
-                  <div className="flex gap-5 items-start">
+                  <div className="flex flex-col md:flex-row gap-5 md:items-start">
                     <SectionCard title="Loss Details" subtitle="When and where the incident occurred">
                       <div className="grid grid-cols-1 gap-3">
                         <div>
@@ -1495,7 +1495,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
               {/* Step 3: Vehicle location + Documents */}
               {step === 2 && (
-                <div className="flex gap-5" style={{ animation: "slideIn 0.2s ease" }}>
+                <div className="flex flex-col md:flex-row gap-5" style={{ animation: "slideIn 0.2s ease" }}>
                   <SectionCard title="Vehicle Location" subtitle="Where the vehicle is and how it got there">
                     <div>
                       <Label required>Vehicle Location</Label>
@@ -1667,7 +1667,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
 
         {/* Footer nav */}
         {!submitted && (
-          <div className="shrink-0 border-t border-blue-100 bg-white px-7 py-4 flex items-center justify-between">
+          <div className="shrink-0 border-t border-blue-100 bg-white px-4 sm:px-7 py-4 flex items-center justify-between">
             <div>
               {step > 0 && (
                 <button type="button" onClick={() => goToStep(step - 1)}
@@ -1680,7 +1680,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
               )}
             </div>
             <div className="flex items-center gap-3">
-              <p className="text-xs text-blue-300"><span className="text-blue-400">*</span> Required</p>
+              <p className="hidden sm:block text-xs text-blue-300"><span className="text-blue-400">*</span> Required</p>
               {step < STEPS.length - 1 ? (
                 <button type="button" onClick={() => goToStep(step + 1)}
                   className="flex items-center gap-1.5 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-all shadow-md shadow-blue-200 hover:-translate-y-0.5 active:translate-y-0">
