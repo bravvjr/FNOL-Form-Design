@@ -81,6 +81,22 @@ export type ClaimComment = {
   field?: string;
 };
 
+/** Mirrors Flip comms (`NotificationCreate`, `queue_mail_async`, repairs dispatcher). */
+export type ClaimNotification = {
+  id: string;
+  channel: "email" | "app";
+  template: string;
+  /** Repairs touchpoint event from `flip_repairs.comms.dispatcher`. */
+  triggerEvent?: string;
+  subject: string;
+  recipients: string;
+  cc?: string;
+  sentAt: string | null;
+  status: "sent" | "pending" | "scheduled";
+  message: string;
+  sourceService?: string;
+};
+
 export type ClaimStage = {
   id: number;
   code: string;
@@ -722,5 +738,361 @@ export const CLAIM_STAGES: ClaimStage[] = [
     primaryAction: "Close claim",
   },
 ];
+
+export const STAGE_NOTIFICATIONS: Record<number, ClaimNotification[]> = {
+  1: [
+    {
+      id: "init-insured",
+      channel: "email",
+      template: "INSURED_CLAIM_SUCCESS_NOTIFICATION",
+      triggerEvent: "repairs.booking_completed",
+      subject: `Claim Submitted - Reg No: ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: "12 Aug 2026, 09:28",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Claim submitted for ${DEMO_CLAIM.registration}. Reference ${DEMO_CLAIM.number}.`,
+    },
+    {
+      id: "init-intermediary",
+      channel: "email",
+      template: "INTERMEDIARY_CLAIM_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.booking_completed",
+      subject: `Motor Claim Reported - Reg No: ${DEMO_CLAIM.registration}, Incident Date: ${DEMO_CLAIM.lossDate}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      cc: `${DEMO_CLAIM.analyst} (Claims handler)`,
+      sentAt: "12 Aug 2026, 09:30",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Booking for vehicle ${DEMO_CLAIM.registration} has been completed.`,
+    },
+  ],
+  2: [
+    {
+      id: "draft-intermediary",
+      channel: "email",
+      template: "INTERMEDIARY_ASSESSMENT_NOTIFICATION",
+      triggerEvent: "repairs.assessor_appointed",
+      subject: `Assessor appointed — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      cc: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: "12 Aug 2026, 14:25",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `An assessor has been appointed for ${DEMO_CLAIM.registration}.`,
+    },
+    {
+      id: "draft-assessor",
+      channel: "email",
+      template: "NOTIFICATION_OF_APPOINTMENT",
+      triggerEvent: "repairs.assessor_appointed",
+      subject: `Assessment assignment — ${DEMO_CLAIM.registration}`,
+      recipients: "Peter Otieno (Motor assessor)",
+      sentAt: "12 Aug 2026, 14:22",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Inspect ${DEMO_CLAIM.registration} at ${DEMO_CLAIM.garage}. Draft report due 15 Aug 2026.`,
+    },
+  ],
+  10: [
+    {
+      id: "qa-internal",
+      channel: "email",
+      template: "INTERNAL_CLAIM_NOTIFICATION",
+      triggerEvent: "repairs.draft_submitted",
+      subject: `Internal review — draft assessment · ${DEMO_CLAIM.registration}`,
+      recipients: "Grace Wanjiku (Senior assessor)",
+      sentAt: "13 Aug 2026, 16:48",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Draft assessment for ${DEMO_CLAIM.registration} submitted for internal QA review.`,
+    },
+  ],
+  11: [
+    {
+      id: "draft-report-intermediary",
+      channel: "email",
+      template: "INTERMEDIARY_ASSESSMENT_REVIEW_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.draft_submitted",
+      subject: `Draft assessment submitted — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      cc: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: "14 Aug 2026, 11:08",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Draft assessment report for ${DEMO_CLAIM.registration} has been submitted.`,
+    },
+    {
+      id: "draft-report-garage",
+      channel: "email",
+      template: "REQUEST_FOR_QUOTATION",
+      triggerEvent: "repairs.repair_estimate",
+      subject: `Garage estimate requested — ${DEMO_CLAIM.registration}`,
+      recipients: "Westlands AutoWorks (Garage)",
+      sentAt: "14 Aug 2026, 11:12",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Please submit your repair estimate for ${DEMO_CLAIM.registration}.`,
+    },
+  ],
+  12: [
+    {
+      id: "garage-quote-intermediary",
+      channel: "email",
+      template: "INTERMEDIARY_ASSESSMENT_REVIEW_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.repair_estimate",
+      subject: `Repair estimate available — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      cc: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: "15 Aug 2026, 14:05",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repair estimate for ${DEMO_CLAIM.registration} is now available.`,
+    },
+  ],
+  3: [
+    {
+      id: "offers-sent",
+      channel: "email",
+      template: "REQUEST_FOR_QUOTATION",
+      triggerEvent: "repairs.offers_sent",
+      subject: `Offers sent — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      cc: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: "15 Aug 2026, 17:45",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Offers for vehicle ${DEMO_CLAIM.registration} have been sent to service providers.`,
+    },
+    {
+      id: "offers-closed",
+      channel: "email",
+      template: "QUOTATION_SUMMARY_TEMPLATE",
+      triggerEvent: "repairs.bidding_closed",
+      subject: `Bidding closed — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "16 Aug 2026, 12:05",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Bidding process for ${DEMO_CLAIM.registration} has been closed.`,
+    },
+    {
+      id: "offers-analysis",
+      channel: "email",
+      template: "QUOTATION_SUMMARY_TEMPLATE",
+      triggerEvent: "repairs.analysis_completed",
+      subject: `Quotation analysis complete — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "16 Aug 2026, 12:10",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Quotation analysis for ${DEMO_CLAIM.registration} has been completed.`,
+    },
+  ],
+  4: [
+    {
+      id: "final-report-insured",
+      channel: "email",
+      template: "FINAL_ASSESSMENT_REPORT_TEMPLATE",
+      triggerEvent: "repairs.analysis_completed",
+      subject: `Final assessment report — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "17 Aug 2026, 10:10",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Final assessment complete. Agreed amount KES 179,336 incl. VAT for ${DEMO_CLAIM.registration}.`,
+    },
+  ],
+  5: [
+    {
+      id: "ra-insured",
+      channel: "email",
+      template: "REPAIR_AUTHORITY_INSURED_EMAIL",
+      triggerEvent: "repairs.repair_authority_issued",
+      subject: `Repair authority issued — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "18 Aug 2026, 09:00",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repair authority for ${DEMO_CLAIM.registration} has been issued.`,
+    },
+    {
+      id: "ra-intermediary",
+      channel: "email",
+      template: "INTERMEDIARY_RA_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.repair_authority_issued",
+      subject: `Repair Authority — ${DEMO_CLAIM.number}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "18 Aug 2026, 09:02",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repair authority for ${DEMO_CLAIM.registration} has been issued to ${DEMO_CLAIM.garage}.`,
+    },
+    {
+      id: "ra-sms-insured",
+      channel: "app",
+      template: "SMS",
+      triggerEvent: "repairs.repair_authority_issued",
+      subject: `SMS to ${DEMO_CLAIM.insured}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: "18 Aug 2026, 09:03",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repair authority issued for ${DEMO_CLAIM.registration} at ${DEMO_CLAIM.garage}.`,
+    },
+  ],
+  6: [
+    {
+      id: "repairs-insured",
+      channel: "email",
+      template: "PLACEHOLDER_MAIL_TEMPLATE",
+      triggerEvent: "repairs.repair_authority_issued",
+      subject: `Repairs in progress — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "20 Aug 2026, 08:45",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repairs underway at ${DEMO_CLAIM.garage}. Estimated completion 27 Aug 2026.`,
+    },
+    {
+      id: "repairs-intermediary",
+      channel: "email",
+      template: "INTERMEDIARY_RA_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.repair_authority_issued",
+      subject: `Claim ${DEMO_CLAIM.number} — Repairs in progress`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: "20 Aug 2026, 08:45",
+      status: "sent",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repairs for ${DEMO_CLAIM.registration} are in progress at ${DEMO_CLAIM.garage}.`,
+    },
+  ],
+  13: [
+    {
+      id: "repair-complete-insured",
+      channel: "email",
+      template: "PLACEHOLDER_MAIL_TEMPLATE",
+      triggerEvent: "repairs.repair_completed",
+      subject: `Repairs complete — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Repairs for ${DEMO_CLAIM.registration} have been completed.`,
+    },
+  ],
+  7: [
+    {
+      id: "reinspection-insured",
+      channel: "email",
+      template: "NOTIFICATION_OF_APPOINTMENT",
+      triggerEvent: "repairs.reinspection_assigned",
+      subject: `Reinspection assigned — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Reinspection for ${DEMO_CLAIM.registration} has been assigned.`,
+    },
+    {
+      id: "reinspection-done",
+      channel: "email",
+      template: "REINSPECTION_REPORT_TEMPLATE",
+      triggerEvent: "repairs.reinspection_completed",
+      subject: `Reinspection complete — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Reinspection for ${DEMO_CLAIM.registration} has been completed.`,
+    },
+  ],
+  8: [
+    {
+      id: "release-letter",
+      channel: "email",
+      template: "RELEASE_LETTER",
+      triggerEvent: "repairs.release_letter_generated",
+      subject: `Release letter — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Release letter for ${DEMO_CLAIM.registration} has been generated.`,
+    },
+    {
+      id: "release-dv",
+      channel: "email",
+      template: "DISCHARGE_VOUCHER_TEMPLATE",
+      triggerEvent: "repairs.discharge_voucher_generated",
+      subject: `Discharge voucher — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Discharge voucher for ${DEMO_CLAIM.registration} has been generated.`,
+    },
+    {
+      id: "release-feedback",
+      channel: "email",
+      template: "FEEDBACK_FORM_TEMPLATE",
+      triggerEvent: "repairs.request_insured_feedback",
+      subject: `Feedback request — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `We request your feedback regarding repairs for ${DEMO_CLAIM.registration}.`,
+    },
+    {
+      id: "release-collected",
+      channel: "email",
+      template: "INTERMEDIARY_RELEASE_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.asset_collected",
+      subject: `Vehicle collected — ${DEMO_CLAIM.registration}`,
+      recipients: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      cc: `${DEMO_CLAIM.insured} (Insured)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Vehicle ${DEMO_CLAIM.registration} has been collected.`,
+    },
+  ],
+  9: [
+    {
+      id: "closed-insured",
+      channel: "email",
+      template: "INTERMEDIARY_RELEASE_NOTIFICATION_TEMPLATE",
+      triggerEvent: "repairs.asset_collected",
+      subject: `Claim closed — ${DEMO_CLAIM.number}`,
+      recipients: `${DEMO_CLAIM.insured} (Insured)`,
+      cc: `${DEMO_CLAIM.intermediary} (Intermediary)`,
+      sentAt: null,
+      status: "scheduled",
+      sourceService: "FLIP_REPAIRS",
+      message: `Your vehicle ${DEMO_CLAIM.registration} has been collected from the garage. Claim file will be archived.`,
+    },
+  ],
+};
+
+export function notificationsForStage(stageId: number, kind: StageKind): ClaimNotification[] {
+  const items = STAGE_NOTIFICATIONS[stageId] ?? [];
+  if (kind === "upcoming") {
+    return items.map((item) => ({ ...item, status: "scheduled" as const, sentAt: null }));
+  }
+  if (kind === "current") {
+    return items.map((item) =>
+      item.status === "scheduled" ? { ...item, status: "pending" as const, sentAt: null } : item,
+    );
+  }
+  return items;
+}
 
 export const INITIAL_CURRENT_INDEX = CLAIM_STAGES.findIndex((s) => s.id === 6);
