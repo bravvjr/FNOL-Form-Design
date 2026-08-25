@@ -79,8 +79,22 @@ function searchVehicles(query: string): VehicleRecord[] {
 
 const EMPTY_VEHICLE = { registrationNumber: "", make: "", model: "", yearOfManufacture: "" };
 const EMPTY_INTERMEDIARY = { name: "", code: "", phone: "", email: "" };
-const EMPTY_INSURED = { name: "", idNumber: "" };
+const EMPTY_INSURED = { name: "", idNumber: "", dateOfBirth: "", dlNumber: "", licenseAcquiredDate: "" };
+const EMPTY_DRIVER = { name: "", idNumber: "", dateOfBirth: "", dlNumber: "", licenseAcquiredDate: "" };
 const EMPTY_COMBINED_DOC: CombinedDoc = { id: "combined", file: null, tags: [] };
+
+type PartyTab = "intermediary" | "insured" | "driver";
+type DriverRelation = "self" | "other" | "";
+
+function driverFromInsured(insured: typeof EMPTY_INSURED) {
+  return {
+    name: insured.name,
+    idNumber: insured.idNumber,
+    dateOfBirth: insured.dateOfBirth,
+    dlNumber: insured.dlNumber,
+    licenseAcquiredDate: insured.licenseAcquiredDate,
+  };
+}
 
 const KES = new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", maximumFractionDigits: 0 });
 const titleCase = (v: string) => v.replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -1102,7 +1116,9 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     setStep(clamped);
     setFurthestStep((f) => Math.max(f, clamped));
   };
-  const [partyType, setPartyType] = useState<"intermediary" | "insured">("intermediary");
+  const [partyType, setPartyType] = useState<PartyTab>("intermediary");
+  const [driverRelation, setDriverRelation] = useState<DriverRelation>("");
+  const [driver, setDriver] = useState(EMPTY_DRIVER);
   const [claimType, setClaimType] = useState<ClaimType>("");
   const [claimSubType, setClaimSubType] = useState("");
   const [accidentLocation, setAccidentLocation] = useState("");
@@ -1142,9 +1158,10 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
       phone: r.intermediary.phone ?? "",
       email: r.intermediary.email ?? "",
     });
-    setInsured({ name: r.client.name ?? "", idNumber: r.client.idNumber ?? "" });
+    setInsured({ name: r.client.name ?? "", idNumber: r.client.idNumber ?? "", dateOfBirth: "", dlNumber: "", licenseAcquiredDate: "" });
     setSelectedRecord(r);
     setPartyType("intermediary");
+    if (driverRelation === "self") setDriver(driverFromInsured({ name: r.client.name ?? "", idNumber: r.client.idNumber ?? "", dateOfBirth: "", dlNumber: "", licenseAcquiredDate: "" }));
   };
 
   const handleVehicleClear = () => {
@@ -1152,7 +1169,23 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     setIntermediary(EMPTY_INTERMEDIARY);
     setInsured(EMPTY_INSURED);
     setSelectedRecord(null);
+    if (driverRelation === "self") setDriver(EMPTY_DRIVER);
   };
+
+  const handleDriverRelationChange = (relation: Exclude<DriverRelation, "">) => {
+    setDriverRelation(relation);
+    if (relation === "self") {
+      setDriver(driverFromInsured(insured));
+    } else {
+      setDriver(EMPTY_DRIVER);
+    }
+  };
+
+  useEffect(() => {
+    if (driverRelation === "self") {
+      setDriver(driverFromInsured(insured));
+    }
+  }, [insured, driverRelation]);
 
   const handleDocChange = (key: DocKey, file: File | null) => setDocs((p) => ({ ...p, [key]: file }));
   const handleClaimTypeChange = (type: ClaimType) => { setClaimType(type); setClaimSubType(""); };
@@ -1215,6 +1248,14 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     if (!isTagSatisfied(tag, docs, [combinedDoc])) validationErrors.push(`Upload the ${tag}, or tick it on a combined file.`);
   });
   if (combinedDoc.file && combinedDoc.tags.length === 0) validationErrors.push("Tick what the combined file contains.");
+  if (!driverRelation) validationErrors.push("On Party Details, choose whether the driver was the insured or someone else.");
+  if (driverRelation === "self" && !insured.name.trim()) validationErrors.push("Enter the insured name on Direct Insured before selecting Self as driver.");
+  if (driverRelation === "self" && !insured.idNumber.trim()) validationErrors.push("Enter the insured ID on Direct Insured before selecting Self as driver.");
+  if (driverRelation === "other" && !driver.name.trim()) validationErrors.push("Enter the driver's name.");
+  if (driverRelation === "other" && !driver.idNumber.trim()) validationErrors.push("Enter the driver's ID number.");
+  if (driverRelation === "other" && !driver.dateOfBirth) validationErrors.push("Enter the driver's date of birth.");
+  if (driverRelation === "other" && !driver.dlNumber.trim()) validationErrors.push("Enter the driver's driving licence number.");
+  if (driverRelation === "other" && !driver.licenseAcquiredDate) validationErrors.push("Enter when the driving licence was acquired.");
 
   const handleSubmit = () => {
     if (validationErrors.length > 0) { setShowErrors(true); return; }
@@ -1230,6 +1271,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     setMovement(""); setTowingAgent(""); setTowingAgentOther("");
     setCombinedDoc(EMPTY_COMBINED_DOC); setShowErrors(false); setSubmitted(false);
     setDocs({ kyc: null, policeAbstract: null, drivingLicence: null, claimForm: null });
+    setDriverRelation(""); setDriver(EMPTY_DRIVER);
   };
 
   const handleClose = () => { handleReset(); onClose(); };
@@ -1351,13 +1393,17 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                     {selectedRecord && <RecordDetail record={selectedRecord} />}
                   </SectionCard>
 
-                  <SectionCard title="Party Details" subtitle="Intermediary or insured contact">
-                    <div className="flex gap-1.5 p-1 bg-blue-100 rounded-lg">
-                      {(["intermediary", "insured"] as const).map((t) => (
-                        <button key={t} type="button" onClick={() => setPartyType(t)}
-                          className={`flex-1 px-3 py-1.5 rounded-md text-xs font-semibold transition-all duration-150
-                            ${partyType === t ? "bg-blue-600 text-white shadow-sm" : "text-blue-500 hover:text-blue-700"}`}>
-                          {t === "intermediary" ? "Intermediary" : "Direct Insured"}
+                  <SectionCard title="Party Details" subtitle="Intermediary, insured, and driver at time of accident">
+                    <div className="flex gap-1 p-1 bg-blue-100 rounded-lg">
+                      {([
+                        { id: "intermediary" as const, label: "Intermediary" },
+                        { id: "insured" as const, label: "Direct Insured" },
+                        { id: "driver" as const, label: "Driver" },
+                      ]).map((tab) => (
+                        <button key={tab.id} type="button" onClick={() => setPartyType(tab.id)}
+                          className={`flex-1 px-2 py-1.5 rounded-md text-[11px] sm:text-xs font-semibold transition-all duration-150
+                            ${partyType === tab.id ? "bg-blue-600 text-white shadow-sm" : "text-blue-500 hover:text-blue-700"}`}>
+                          {tab.label}
                         </button>
                       ))}
                     </div>
@@ -1387,7 +1433,7 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                             </div>
                           </div>
                         </>
-                      ) : (
+                      ) : partyType === "insured" ? (
                         <>
                           <div>
                             <Label required locked={autofilled}>Insured Name</Label>
@@ -1399,6 +1445,95 @@ function FNOLDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
                             <Input placeholder="12345678" required locked={autofilled} value={insured.idNumber}
                               onChange={(e) => setInsured((p) => ({ ...p, idNumber: e.target.value }))} />
                           </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <Label required>Driver at time of accident</Label>
+                            <ChoicePills
+                              value={driverRelation === "self" ? "Self" : driverRelation === "other" ? "Other" : ""}
+                              onChange={(v) => handleDriverRelationChange(v === "Self" ? "self" : "other")}
+                              options={["Self", "Other"]}
+                              name="Driver at time of accident"
+                            />
+                            <p className="text-xs text-blue-400 mt-1.5 leading-relaxed">
+                              {driverRelation === "self"
+                                ? "The insured was driving — no need to re-enter details."
+                                : driverRelation === "other"
+                                  ? "Someone else was driving. Enter their details below."
+                                  : "Choose Self if the insured was driving, or Other if someone else was at the wheel."}
+                            </p>
+                          </div>
+                          {driverRelation === "self" && (
+                            <div className="rounded-lg border border-blue-100 bg-white px-3 py-3">
+                              <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-400 mb-2">Using insured details</p>
+                              <dl className="grid grid-cols-1 gap-2">
+                                <div>
+                                  <dt className="text-[10px] uppercase tracking-wide text-slate-400">Name</dt>
+                                  <dd className="text-sm font-medium text-slate-700">{insured.name.trim() || "— fill on Direct Insured tab"}</dd>
+                                </div>
+                                <div>
+                                  <dt className="text-[10px] uppercase tracking-wide text-slate-400">ID Number</dt>
+                                  <dd className="text-sm font-medium text-slate-700">{insured.idNumber.trim() || "— fill on Direct Insured tab"}</dd>
+                                </div>
+                              </dl>
+                            </div>
+                          )}
+                          {driverRelation === "other" && (
+                            <RevealGroup>
+                              <div>
+                                <Label required>Name</Label>
+                                <Input
+                                  placeholder="Full name"
+                                  required
+                                  value={driver.name}
+                                  onChange={(e) => setDriver((p) => ({ ...p, name: e.target.value }))}
+                                />
+                              </div>
+                              <div>
+                                <Label required>ID Number</Label>
+                                <Input
+                                  placeholder="National ID"
+                                  required
+                                  value={driver.idNumber}
+                                  onChange={(e) => setDriver((p) => ({ ...p, idNumber: e.target.value }))}
+                                />
+                                <p className="text-xs text-blue-400 mt-1">May be verified against IPRS when integrated.</p>
+                              </div>
+                              <div>
+                                <Label required>Date of Birth</Label>
+                                <Input
+                                  type="date"
+                                  required
+                                  value={driver.dateOfBirth}
+                                  onChange={(e) => setDriver((p) => ({ ...p, dateOfBirth: e.target.value }))}
+                                  onClick={(e) => e.currentTarget.showPicker?.()}
+                                />
+                                <p className="text-xs text-blue-400 mt-1">Used to confirm young driver excess.</p>
+                              </div>
+                              <div>
+                                <Label required>Driving Licence Number</Label>
+                                <Input
+                                  placeholder="DL number"
+                                  required
+                                  value={driver.dlNumber}
+                                  onChange={(e) => setDriver((p) => ({ ...p, dlNumber: e.target.value }))}
+                                />
+                                <p className="text-xs text-blue-400 mt-1">May be verified against NTSA when integrated.</p>
+                              </div>
+                              <div>
+                                <Label required>Date licence was acquired</Label>
+                                <Input
+                                  type="date"
+                                  required
+                                  value={driver.licenseAcquiredDate}
+                                  onChange={(e) => setDriver((p) => ({ ...p, licenseAcquiredDate: e.target.value }))}
+                                  onClick={(e) => e.currentTarget.showPicker?.()}
+                                />
+                                <p className="text-xs text-blue-400 mt-1">Used to confirm novice driver excess.</p>
+                              </div>
+                            </RevealGroup>
+                          )}
                         </>
                       )}
                     </div>
